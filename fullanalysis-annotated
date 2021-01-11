@@ -1,12 +1,14 @@
 rm(list=ls())
 library(XML)
-setwd("c:/Users/djl/Documents/summer project")
+setwd("c:/Users/djl/Documents/summer project") #Set the working directory as required
 library(rio)
 library(data.table)
 library(stringr)
 library(xlsx)
 library(matrixStats)
 library(ggplot2)
+
+#Loading the Data
 dataclean<-import("data_clean2.xlsx")
 dataclean<-dataclean[-which(is.na(dataclean$treatment1)),]
 dataclean<-dataclean[-which(grepl('NA',dataclean$treatment2)),]
