@@ -1,29 +1,348 @@
 rm(list=ls())
+setwd("c:/Users/djl/Documents/summer project") #Set the working directory as required
 library(XML)
-setwd("c:/Users/djl/Documents/summer project")
 library(rio)
 library(data.table)
 library(stringr)
 library(xlsx)
+library(varhandle)
 library(matrixStats)
 library(ggplot2)
-dataclean<-import("data_clean2.xlsx")
-dataclean<-dataclean[-which(is.na(dataclean$treatment1)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment2)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment3)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment4)),]
+library(readr)
+library(tidyverse)
+library(reshape2)
+library(jtools)
+library(broom.mixed)
+library(lattice)
+library(gtools)
+library(ggstance)
+library(car)
+library(lm.beta)
+library(stargazer)
+library(BayesFactor)
+library(tidyBF)
+library("TOSTER")
+library(tm)
 
-dataclean$lowattention[which(dataclean$duplicate==1)]<-1
-summary(as.factor(dataclean$treatment1))
-dataclean$treatment1<-(dataclean$treatment1*(-1))+8
-dataclean$treatment2<-(dataclean$treatment2*(-1))+8
-dataclean$treatment3<-(dataclean$treatment3*(-1))+8
-dataclean$treatment4<-(dataclean$treatment4*(-1))+8
+
+Data <- import("data_original.xlsx")
+#Data as imported from Quanteda with manually entered column for low attention
+
+########################################
+####Intro, Data adjustments, column labeling ect
+
+####Each section begins with a line of number signs '#', you can skip to the start of the
+####next section by using the control + f, find tool, and entering more than 5 '#'s
+
+####Begin with general data correctionse and creations of user defined functions
+####creation of statistical models and graphing begin on line XXXXXXXXXX
+
+
+###Coding duplicate
+dupes<-Data[which(duplicated(Data$IPAddress)),]
+Data$duplicate<-ifelse(grepl(paste0(paste0(dupes$IPAddress,sep ="|",collapse = ""),
+                                  "zzzzzzz",collapse = ""),Data$IPAddress),1,0)
+####Coding Religion Variable as well as Low Attension Vairble
+Data$lowattention<-1
+Data$religion<-9
+Data$misspell<-0
+Data$Q11<-tolower(Data$Q11)
+
+#######religion coding############
+##################################
+#1  == catholic
+#2  == protestant
+#3  == islam
+#4  == mormon
+#5  == jewish
+#6  == not religious, ironic/mocking responses
+#7  == other, multiple, earth based
+#8  == east asian religions
+#9  == NA, dont know, invalid enty
+
+#do not adjust order or collapse searched. order at time reflects overlapping patterns in names
+#of different religions/responses
+
+Data$lowattention[grep('divine feminine|unity|hellenic pantheon|rastafarian|other|spirit|zoro|pantheist|unitarian',Data$Q11)]<-0
+Data$religion[grep('divine feminine|unity|hellenic pantheon|rastafarian|other|spirit|zoro|pantheist|unitarian',Data$Q11)]<-7
+
+
+Data$lowattention[grep('non$|nome|believe in that|nonr|no preference|satanist|nun|no special one|i dont practice anything|no particular one|have one|n0ne|dreward|no specific|no formal|baconist|affiliation|spagettie monster|no specific|agonostic|agnoatic|applicable|agnostic|athe|none|relig|nothing|recov|athi|spirit|pastafarian',Data$Q11)]<-0
+Data$religion[grep('non$|nome|believe in that|nonr|no preference|satanist|nun|no special one|i dont practice anything|no particular one|have one|n0ne|dreward|no specific|no formal|baconist|affiliation|spagettie monster|no specific|agonostic|agnoatic|applicable|agnostic|athe|none|relig|nothing|recov|athi|spirit|pastafarian',Data$Q11)]<-6
+
+
+Data$lowattention[grep('calothic|roman|catolic|catholic|cath|orthodox',Data$Q11)]<-0
+Data$religion[grep('calothic|roman|catolic|catholic|cath|orthodox',Data$Q11)]<-1
+
+Data$misspell[which(Data$lowattention==1&(agrepl('catholic',Data$Q11,max.distance = 2)))]<-1
+Data$religion[which(Data$lowattention==1&(agrepl('catholic',Data$Q11,max.distance = 2)))]<-1
+Data$lowattention[which(Data$lowattention==1&(agrepl('catholic',Data$Q11,max.distance = 2)))]<-0
+
+
+Data$lowattention[grep('congregationalist|prodacen|born again|bbcfi|pca|nazerine|quaker|litheran|assemblies of god|santification|bapsital|apost|chirtsin|naza|adven|prot|christ|bapt|method|luth|episc|angli|pene|pent|pres|evang|church of christ|church of god|denom',
+                         Data$Q11)]<-0
+Data$religion[grep('congregationalist|prodacen|born again|bbcfi|pca|nazerine|quaker|litheran|assemblies of god|santification|bapsital|apost|chirtsin|naza|adven|prot|lotheran|christ|bapt|method|luth|episc|angli|pene|pent|pres|evang|church of christ|church of god|denom',
+                     Data$Q11)]<-2
 
 
 
+#####################################misspell################
+Data$misspell[grep('ejudi|calothic|prodacen|judisiam|judiasm|sickh|litheran|bapsital|agonostic|agnoatic|chirtsin|catolic|pene|luthen|cathl|penta|pento|yicost|penti|proti|prota|athi|presbi|presy|lotheran'
+                     ,Data$Q11)]<-1
+Data$misspell[which(Data$lowattention==1&grepl('ba.+[p|t]ist',Data$Q11))]<-1
+Data$religion[which(Data$lowattention==1&grepl('ba.+[p|t]ist',Data$Q11))]<-2
+Data$lowattention[grepl('ba.+[p|t]ist',Data$Q11)]<-0
+Data$misspell[which(Data$lowattention==1&(agrepl('christian',Data$Q11,max.distance = 3)|
+                                                agrepl('protest',Data$Q11,max.distance = 2)))]<-1
+Data$religion[which(Data$lowattention==1&(agrepl('christian',Data$Q11,max.distance = 3)|
+                                                agrepl('protest',Data$Q11,max.distance = 2)))]<-2
+Data$lowattention[which(Data$lowattention==1&(agrepl('christian',Data$Q11,max.distance = 3)|
+                                                    agrepl('protest',Data$Q11,max.distance = 2)))]<-0
 
-#BOOTDATA is our data but as done immediately above, you need to remove the NA's from our
+
+Data$lowattention[grep('islam|musl',
+                         Data$Q11)]<-0
+Data$religion[grep('islam|musl',
+                     Data$Q11)]<-3
+
+Data$lowattention[grep('sickh|tao|bud|sikh|hind',
+                         Data$Q11)]<-0
+Data$religion[grep('sickh|tao|bud|sikh|hind',
+                     Data$Q11)]<-8
+
+
+
+Data$lowattention[grep('day s|morm|lds',
+                         Data$Q11)]<-0
+Data$religion[grep('day s|morm|lds',
+                     Data$Q11)]<-4
+
+
+
+Data$lowattention[grep('ejudi|judisiam|judiasm|messianic|hebrew|jew|judaism',Data$Q11)]<-0
+Data$religion[grep('ejudi|judisiam|judiasm|messianic|hebrew|jew|judaism',Data$Q11)]<-5
+
+Data$lowattention[grep('jewish and|and budd|dudeism|wic|paga|jehov',Data$Q11)]<-0
+Data$religion[grep('jewish and|and budd|dudeism|wic|paga|jehov',Data$Q11)]<-7
+
+Data$religion[grep('but do not follow anything|so none i guess',Data$Q11)]<-6
+
+
+suspect<-Data[(Data$lowattention==1|Data$misspell==1),]
+suspect<-suspect[-which(suspect$Q13=="1,2,4,6"),]
+suspect<-suspect[-which((suspect$Q13=="1,2,4")|(suspect$Q13=="2,4,6")|(suspect$Q13=="1,2,6")|(suspect$Q13=="1,4,6")),]
+
+Data$lowattention<-0
+Data$lowattention[grep(paste0(paste0(as.character(suspect$ResponseId),sep = "|",collapse = ""),"lkjljklzzzz",collapse = ""),Data$ResponseId)]<-1
+Data<-subset(Data,select = -c(misspell))
+
+
+#### Adding to low attension if R entered wrong number of digits or non-numbers in year and zip
+
+Data$lowattention[!check.numeric(v = Data$Q3)|(nchar(Data$Q3,allowNA = TRUE)!=4)]<-1
+
+Data$lowattention[!check.numeric(v = Data$Q4)|(nchar(Data$Q4,allowNA = TRUE)!=5)]<-1
+sum(Data$lowattention)
+
+####Identifying Groups and Responses From Questions
+
+Data$group <- NA
+Data$t1 <- NA
+Data$t2 <- NA
+Data$t3 <- NA
+Data$t4 <- NA
+
+#Group 1: Expert Fact Gain
+Data[which(!is.na(Data$EFG1_1)),]$group <- 1
+Data[which(!is.na(Data$EFG1_1)),]$t1 <- Data[which(!is.na(Data$EFG1_1)),]$EFG1_1
+Data[which(!is.na(Data$EFG1_1)),]$t2 <- Data[which(!is.na(Data$EFG1_1)),]$EFG2_1
+Data[which(!is.na(Data$EFG1_1)),]$t3 <- Data[which(!is.na(Data$EFG1_1)),]$EFG3_1
+Data[which(!is.na(Data$EFG1_1)),]$t4 <- Data[which(!is.na(Data$EFG1_1)),]$EFG4_1
+
+#Group 2: Expert Fact Loss
+Data[which(!is.na(Data$EFL1_1)),]$group <- 2
+Data[which(!is.na(Data$EFL1_1)),]$t1 <- Data[which(!is.na(Data$EFL1_1)),]$EFL1_1
+Data[which(!is.na(Data$EFL1_1)),]$t2 <- Data[which(!is.na(Data$EFL1_1)),]$EFL2_1
+Data[which(!is.na(Data$EFL1_1)),]$t3 <- Data[which(!is.na(Data$EFL1_1)),]$EFL3_1
+Data[which(!is.na(Data$EFL1_1)),]$t4 <- Data[which(!is.na(Data$EFL1_1)),]$EFL4_1
+
+#Group 3: Expert Experience Gain
+Data[which(!is.na(Data$EEG1_1)),]$group <- 3
+Data[which(!is.na(Data$EEG1_1)),]$t1 <- Data[which(!is.na(Data$EEG1_1)),]$EEG1_1
+Data[which(!is.na(Data$EEG1_1)),]$t2 <- Data[which(!is.na(Data$EEG1_1)),]$EEG2_1
+Data[which(!is.na(Data$EEG1_1)),]$t3 <- Data[which(!is.na(Data$EEG1_1)),]$EEG3_1
+Data[which(!is.na(Data$EEG1_1)),]$t4 <- Data[which(!is.na(Data$EEG1_1)),]$EEG4_1
+
+#Group 4: Expert Experience Loss
+Data[which(!is.na(Data$EEL1_1)),]$group <- 4
+Data[which(!is.na(Data$EEL1_1)),]$t1 <- Data[which(!is.na(Data$EEL1_1)),]$EEL1_1
+Data[which(!is.na(Data$EEL1_1)),]$t2 <- Data[which(!is.na(Data$EEL1_1)),]$EEL2_1
+Data[which(!is.na(Data$EEL1_1)),]$t3 <- Data[which(!is.na(Data$EEL1_1)),]$EEL3_1
+Data[which(!is.na(Data$EEL1_1)),]$t4 <- Data[which(!is.na(Data$EEL1_1)),]$EEL4_1
+
+#Group 5 : Nonexpert Fact Gain
+Data[which(!is.na(Data$NFG1_1)),]$group <- 5
+Data[which(!is.na(Data$NFG1_1)),]$t1 <- Data[which(!is.na(Data$NFG1_1)),]$NFG1_1
+Data[which(!is.na(Data$NFG1_1)),]$t2 <- Data[which(!is.na(Data$NFG1_1)),]$NFG2_1
+Data[which(!is.na(Data$NFG1_1)),]$t3 <- Data[which(!is.na(Data$NFG1_1)),]$NFG3_1
+Data[which(!is.na(Data$NFG1_1)),]$t4 <- Data[which(!is.na(Data$NFG1_1)),]$NFG4_1
+
+#Group 6 : Nonexpert Fact Loss
+Data[which(!is.na(Data$NFL1_1)),]$group <- 6
+Data[which(!is.na(Data$NFL1_1)),]$t1 <- Data[which(!is.na(Data$NFL1_1)),]$NFL1_1
+Data[which(!is.na(Data$NFL1_1)),]$t2 <- Data[which(!is.na(Data$NFL1_1)),]$NFL2_1
+Data[which(!is.na(Data$NFL1_1)),]$t3 <- Data[which(!is.na(Data$NFL1_1)),]$NFL3_1
+Data[which(!is.na(Data$NFL1_1)),]$t4 <- Data[which(!is.na(Data$NFL1_1)),]$NFL4_1
+
+#Group 7 : Nonexpert Experience Gain
+Data[which(!is.na(Data$NEG1_1)),]$group <- 7
+Data[which(!is.na(Data$NEG1_1)),]$t1 <- Data[which(!is.na(Data$NEG1_1)),]$NEG1_1
+Data[which(!is.na(Data$NEG1_1)),]$t2 <- Data[which(!is.na(Data$NEG1_1)),]$NEG2_1
+Data[which(!is.na(Data$NEG1_1)),]$t3 <- Data[which(!is.na(Data$NEG1_1)),]$NEG3_1
+Data[which(!is.na(Data$NEG1_1)),]$t4 <- Data[which(!is.na(Data$NEG1_1)),]$NEG4_1
+
+#Group 8 : Nonexpert Experience Loss
+
+Data[which(!is.na(Data$NEL1_1)),]$group <- 8
+Data[which(!is.na(Data$NEL1_1)),]$t1 <- Data[which(!is.na(Data$NEL1_1)),]$NEL1_1
+Data[which(!is.na(Data$NEL1_1)),]$t2 <- Data[which(!is.na(Data$NEL1_1)),]$NEL2_1
+Data[which(!is.na(Data$NEL1_1)),]$t3 <- Data[which(!is.na(Data$NEL1_1)),]$NEL3_1
+Data[which(!is.na(Data$NEL1_1)),]$t4 <- Data[which(!is.na(Data$NEL1_1)),]$NEL4_1
+
+#Group 9: Control
+
+Data[which(!is.na(Data$C1_1)),]$group <- 9
+Data[which(!is.na(Data$C1_1)),]$t1 <- Data[which(!is.na(Data$C1_1)),]$C1_1
+Data[which(!is.na(Data$C1_1)),]$t2 <- Data[which(!is.na(Data$C1_1)),]$C2_1
+Data[which(!is.na(Data$C1_1)),]$t3 <- Data[which(!is.na(Data$C1_1)),]$C3_1
+Data[which(!is.na(Data$C1_1)),]$t4 <- Data[which(!is.na(Data$C1_1)),]$C4_1
+
+#Renaming variables and preserving originals
+Data$treatment1 <- Data$t1
+Data$treatment2 <- Data$t2
+Data$treatment3 <- Data$t3
+Data$treatment4 <- Data$t4
+
+######Coding Media Variables#######
+
+#Removing punctuation and adding to lowercase 
+Data$Q10 <- tolower(Data$Q10)
+Data$Q10 <- removePunctuation(Data$Q10)
+
+
+#Initiatzing Dummy Vairables
+Data$fox <- 0
+Data$nbc <- 0
+Data$cnn <- 0
+Data$abc <- 0
+Data$nyt <- 0
+Data$fb <-0
+Data$twitter <- 0
+Data$insta <- 0
+
+#Checking if fox is present in response for FOX News dummy
+Data$fox <- str_detect(string = Data$Q10,"fox")
+Data$fox <- as.numeric(Data$fox)
+
+#Checking if nbc is present in response for MSnbc News dummy
+Data$nbc <- str_detect(string = Data$Q10,"nbc")
+Data$nbc <- as.numeric(Data$nbc)
+
+#Checking if cnn is present in response for cnn News dummy
+Data$cnn <- str_detect(string = Data$Q10,"cnn")
+Data$cnn <- as.numeric(Data$cnn)
+
+#Checking if abc is present in response for abc News dummy
+Data$abc <- str_detect(string = Data$Q10,"abc")
+Data$abc <- as.numeric(Data$abc)
+
+#Checking if new york times is present in response for nytdummy
+#Might have written nyt or newyorktime(check this in data)
+Data$nyt <- str_detect(string = Data$Q10,"new york times")
+Data$nyt <- as.numeric(Data$nyt)
+
+#Checking if facebook is present in response for  fb dummy
+#Might have written fe(check this in data)
+Data$fb <- str_detect(string = Data$Q10,"facebook")
+Data$fb <- as.numeric(Data$fb)
+
+#Checking if twitter is present in response for twitter dummy
+Data$twitter <- str_detect(string = Data$Q10,"twitter")
+Data$twitter <- as.numeric(Data$twitter)
+
+#Checking if insta is present in response for instagram dummy
+Data$insta <- str_detect(string = Data$Q10,"insta")
+Data$insta <- as.numeric(Data$insta)
+
+
+####create variable for manipulation check
+Data <-cbind(Data,(as.numeric(grepl('1',Data$Q13))+as.numeric(grepl('2',Data$Q13))+
+                     as.numeric(grepl('4',Data$Q13))+as.numeric(grepl('6',Data$Q13))-
+                     (as.numeric(grepl('3',Data$Q13))+as.numeric(grepl('5',Data$Q13))+
+                        as.numeric(grepl('7',Data$Q13)))))
+
+colnames(Data)[111]<-'netmanipcheck'
+
+###We reversed the sign of the dependent variables. 7 indicates strongly agree, 
+###while 1 indicates strongly disagree for each treatment condition
+
+Data$treatment1<-(Data$treatment1*(-1))+8
+Data$treatment2<-(as.numeric(Data$treatment2)*(-1))+8
+Data$treatment3<-(as.numeric(Data$treatment3)*(-1))+8
+Data$treatment4<-(as.numeric(Data$treatment4)*(-1))+8
+
+
+###duplicate indicates repeated IP addresses, we did not want to summarily remove these
+###cases because they may be family members or roomates taking the survey on recommendations
+###however we add these to low attention under the alternative possibility that they may
+###be individuals with multiple accounts producing spam results rather than more genuine responses
+Data$lowattention[which(Data$duplicate==1)]<-1
+
+
+
+###We reversed the sign of the dependent variables. 7 indicates strongly agree, 
+###while 1 indicates strongly disagree for each treatment condition
+Data<-Data[-which(is.na(Data$treatment1)),]
+Data<-Data[-which(is.na(Data$treatment2)),]
+Data<-Data[-which(is.na(Data$treatment3)),]
+Data<-Data[-which(is.na(Data$treatment4)),]
+
+
+###Columns added for specific analysis, redundancies are the result of multiple individuals
+###contributing to this code
+Data$ideology <- Data$Q9
+Data$pid <- Data$Q8
+Data$pid_scale <- ifelse(Data$pid<4,Data$pid, ifelse(Data$pid==9,NA,Data$pid-1))
+Data$republican <- ifelse(Data$pid>5 & Data$pid<9,1,0)
+Data$control <- ifelse(Data$group==9,1,0)
+Data$expertise <- ifelse(Data$group<5,1,ifelse(Data$group==9,0,0))
+Data$fact <- ifelse(Data$group<3 | Data$group==5 | Data$group==6,1,ifelse(Data$group==9,0,0))
+Data$gain <- ifelse(Data$group==2 | Data$group==4| Data$group==6 | Data$group==8,1,ifelse(Data$group==9,0,0))
+Data$treatment <- ifelse(Data$group==9,0,1)
+Data$birth_year <- Data$Q3
+Data$birth_year <- as.numeric(Data$birth_year)
+Data$pidDK<-ifelse(is.na(Data$pid_scale),1,0)
+Data$pid_scale<-ifelse(is.na(Data$pid_scale),0,Data$pid_scale-4)
+Data$ethnicity <- as.numeric(Data$ethnicity)
+Data$ethnicity <- ifelse(Data$ethnicity>7,7,Data$ethnicity)
+Data$age<--(Data$birth_year-2020)
+Data$fox<-as.numeric(Data$fox)
+Data$nbc<-as.numeric(Data$nbc)
+Data$Female<-ifelse(Data$gender==2,1,0)
+Data$fox<-ifelse(is.na(Data$fox),0,Data$fox)
+Data$nbc<-ifelse(is.na(Data$nbc),0,Data$nbc)
+Data$cnn<-ifelse(is.na(Data$cnn),0,Data$cnn)
+Data$abc<-ifelse(is.na(Data$abc),0,Data$abc)
+Data$fb<-ifelse(is.na(Data$fb),0,Data$fb)
+Data$twitter<-ifelse(is.na(Data$twitter),0,Data$twitter)
+Data$insta<-ifelse(is.na(Data$insta),0,Data$insta)
+Data$duration_survey <- Data$`Duration (in seconds)`
+
+
+####We created user defined functions to calculate bootstrapped difference in means between
+####treatment groups.
+####The parameters are as follows:
+#BOOTDATA is our data but as done immediately above, the NA's must be removed from our
 #treatment columns. 
 #INGROUPS are the treatment groups you want to look at, 1st 4 rows in the returned data
 #are mean and confidence intervals for these groups. Next 4 rows in returned data are
@@ -52,8 +371,8 @@ condinterval<-function(bootdata,ingroups,excludedgroups="zzz",listconditions=NA,
         temp<-temp[grep(listconditions[j],as.character(temp[,k])),]
       }
     }
-    ingrouptemp<-temp[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),temp$group)),22:25]
-    outgrouptemp<-temp[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),temp$group)),22:25]
+    ingrouptemp<-temp[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),temp$group)),99:102]
+    outgrouptemp<-temp[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),temp$group)),99:102]
     outcome<-rbind(outcome,c(colMeans(data.matrix(ingrouptemp)),colMeans(data.matrix(outgrouptemp)),colMeans(data.matrix(ingrouptemp))-colMeans(data.matrix(outgrouptemp))))
   }
   
@@ -64,51 +383,47 @@ condinterval<-function(bootdata,ingroups,excludedgroups="zzz",listconditions=NA,
 }
 
 
-
-####same thing as condinterval but compares across independent variable groups
-####listdiff and listcompare should be two seperate numeric lists labeled as the name of 
-####the variable of interest. Have not tested with character varaibles (not sure if 
-####the %in% function with recognize characters). 
+#####Loading the Adjusted Data for Analysis
+dataclean<- Data
 
 
+########################################################
+######Figure 1 
+data_figure1 <- dataclean %>% select(group,treatment1,treatment2,treatment3,treatment4)
+datagather <- data_figure1 %>% gather(key="treatment", value="value",treatment1,treatment2,treatment3,treatment4)
 
-
-bygroups<-function(bootdata,ingroups,excludedgroups="zzz",listdiff,listcompare,listconditions=NA,bootnum){
-  
-  outcome<-rbind(rep(NA,12),rep(NA,12))
-  bootdata<-bootdata[-which(grepl(paste0(paste0(excludedgroups,sep = "|",collapse = ""),"zzz",collapse = ""),bootdata$group)),]
-  for(i in 1:bootnum){
-    temp<-bootdata[sample(1:nrow(bootdata),nrow(bootdata),replace = TRUE),]
-    if(!is.na(listconditions)){
-      for(j in length(listconditions)){
-        k<-which(colnames(temp)== names(listconditions)[j])
-        temp<-temp[grep(listconditions[j],as.character(temp[,k])),]
-      }
-    }
-    m<-which(colnames(temp)==names(listdiff))
-    category1<-subset.data.frame(temp,temp[,m] %in% unlist(listdiff))
-    category2<-subset.data.frame(temp,temp[,m] %in% unlist(listcompare))
-    ingtemp1<-category1[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category1$group)),22:25]
-    outgtemp1<-category1[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category1$group)),22:25]
-    ingtemp2<-category2[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category2$group)),22:25]
-    outgtemp2<-category2[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category2$group)),22:25]
-    
-    cat1treat<-(colMeans(data.matrix(ingtemp1))-colMeans(data.matrix(outgtemp1)))
-    cat2treat<-(colMeans(data.matrix(ingtemp2))-colMeans(data.matrix(outgtemp2)))
-    treatdiff<-cat1treat-cat2treat
-    
-    outcome<-rbind(outcome,c(cat1treat,cat2treat,treatdiff))
-  }
-  
-  returnvalues<-as.data.frame(cbind(colMeans(na.omit(outcome)),colQuantiles(na.omit(outcome),probs = c(.025,.975))))
-  names(returnvalues)[1]<-"means"
-  return(returnvalues)
-  
+stderr <- function(x, na.rm=FALSE) {
+  if (na.rm) x <- na.omit(x)
+  sqrt(var(x)/length(x))
 }
 
+datagather2 <- datagather %>% group_by(group,treatment) %>% mutate(se=stderr(value,na.rm=T)) %>% summarise(value= mean(value,na.rm=T), se= median(se))
+datagather2$upper <- datagather2$value+ (1.96 * datagather2$se)
+datagather2$lower <- datagather2$value- (1.96 * datagather2$se)
+
+datagather2$treatment <- factor(datagather2$treatment, levels = c("treatment1", "treatment2", "treatment3", "treatment4"),
+                                labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots')
+)
+datagather2$condition <- factor(datagather2$group, levels = c("1", "2", "3", "4","5","6","7","8","9"),
+                                labels = c("Expert Fact Gain", "Expert Fact Loss","Expert Experience Gain", "Expert Experience Loss","Non-expert Fact Gain", "Non-expert Fact Loss","Non-expert Experience Gain", "Non-expert Experience Loss", "Control")
+)
+
+filter(datagather2,!is.na(condition)) %>% ggplot(aes(x = group, y = value,ymin = lower, ymax = upper,color=condition,na.rm=T))+
+  geom_point(position = position_dodge(width = 0.2)) +
+  geom_errorbar(position = position_dodge(width = 0.2), width = 0.1)+
+  theme_bw() + facet_wrap(~treatment) +   scale_x_continuous(breaks=c(1:9)) + scale_y_continuous(breaks=c(1:7),labels = c("Strongly Disgree","Disagree","Slightly Disagree", "Neither Agree nor Disagree","Slightly Agree","Agree","Strongly Agree"))+ 
+  theme(axis.text=element_text(size=7),axis.title=element_text(size=10,face="bold")) + ylab("")+ xlab("Group Number")+  theme(axis.text.x = element_text(face = 'bold',size = 8),
+        plot.caption = element_text(face = "italic",size = 8),
+        axis.text.y = element_text(size = 7),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 8),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.spacing.x = unit(5.5, "mm"),
+        legend.title = element_text(color = "white"), legend.text = element_text(size = 8)) +expand_limits(y = c(1, 7))
 
 
-###########Main Plot#######################################
+###########Figure 2#######################################
+###generate diff in means and confidence intervals for figure 2
 #Expert v non
 mp1<-condinterval(dataclean,c(1,2,3,4),excludedgroups = c(9),bootnum = 1000)
 #Gain v Loss
@@ -117,220 +432,40 @@ mp2<-condinterval(dataclean,c(1,3,5,7),c(9),bootnum = 1000)
 mp3<-condinterval(dataclean,c(1,2,5,6),c(9),bootnum = 1000)
 
 
+#####Code to figure 2
+
 mainplot<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.factor(c(1,2,3,4,1,2,3,4,1,2,3,4)),rbind(rbind(mp1[9,],NA,NA,mp1[12,]),mp2[9:12,],mp3[9:12,]))
 names(mainplot)[c(4,5)]<-c('low','hi')
 
-ggplot(mainplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
+mainplot$Treatment <- factor(mainplot$Treatment, levels = c("1", "2", "3", "4"),
+                             labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots')
+)
+
+ggplot(mainplot, aes(x = ref,y=means,ymin=low,ymax=hi,color=ref))+ facet_wrap(~Treatment)+
+  geom_errorbar(position = position_dodge(width = 0.2), width = 0.1)+geom_point(position = position_dodge(width = .1),size = 1)  +
   scale_x_discrete(labels=c('1'='Expert v Non-Expert','2'='Gain v Loss','3'='Fact v Experience'))+
   labs(y = NULL,x = NULL)+
   scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.25,.25))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dashed")+
+  theme_bw()+geom_hline(yintercept=c(0), linetype="dashed")+
   scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
   scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
-        legend.title = element_text(color = "white"))+
-  coord_flip()+geom_vline(xintercept = c(1.5,2.5),linetype = 'dotted')
-ggsave('mainplot.jpeg',width = 7,height = 7)
-
-
-
-
-########################################################################################
-############ROBUSTNESs CHECK LOW ATTENTION#############################################
-
-######################################################################################
-#############low attention removed
-#Expert v non
-mp1<-condinterval(dataclean,c(1,2,3,4),excludedgroups = c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#Gain v Loss
-mp2<-condinterval(dataclean,c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-#Fact V Experience
-mp3<-condinterval(dataclean,c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#########################low attention kept
-########manipulation 4
-#Expert v non
-mp1a<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,3,4),c(9),bootnum = 1000)
-
-#Gain v Loss
-mp2a<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,3,5,7),c(9),bootnum = 1000)
-#Fact V Experience
-mp3a<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,5,6),c(9),bootnum = 1000)
-
-##############manipulation 3  
-mp1b<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,3,4),c(9),bootnum = 1000)
-
-#Gain v Loss
-mp2b<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,3,5,7),c(9),bootnum = 1000)
-#Fact V Experience
-mp3b<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,5,6),c(9),bootnum = 1000)
-
-#############manipulation 2
-mp1c<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,3,4),c(9),bootnum = 1000)
-
-#Gain v Loss
-mp2c<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,3,5,7),c(9),bootnum = 1000)
-#Fact V Experience
-mp3c<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,5,6),c(9),bootnum = 1000)
-#################manipulation 1
-
-mp1d<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,3,4),c(9),bootnum = 1000)
-
-#Gain v Loss
-mp2d<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,3,5,7),c(9),bootnum = 1000)
-#Fact V Experience
-mp3d<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,5,6),c(9),bootnum = 1000)
-
-
-#################interact with low attention############################################ 
-########manipulation 4
-#Expert v non
-mp1e<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#Gain v Loss
-mp2e<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-#Fact V Experience
-mp3e<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-##############manipulation 3  
-mp1f<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#Gain v Loss
-mp2f<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-#Fact V Experience
-mp3f<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#############manipulation 2
-mp1g<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#Gain v Loss
-mp2g<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-#Fact V Experience
-mp3g<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-#################manipulation 1
-
-mp1h<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-#Gain v Loss
-mp2h<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-#Fact V Experience
-mp3h<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
-
-
-
-
-
-
-
-
-###################graphs for manipulation checks with and without low attention removed
-
-
-mainplot<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.factor(c(1,2,3,4,1,2,3,4,1,2,3,4)),
-                rbind(rbind(mp1e[9,],NA,NA,mp1e[12,]),mp2e[9:12,],mp3e[9:12,],
-                      rbind(mp1f[9,],NA,NA,mp1f[12,]),mp2f[9:12,],mp3f[9:12,],
-                      rbind(mp1g[9,],NA,NA,mp1g[12,]),mp2g[9:12,],mp3g[9:12,],
-                      rbind(mp1h[9,],NA,NA,mp1h[12,]),mp2h[9:12,],mp3h[9:12,]),
-                c(rep(1,12),rep(2,12),rep(3,12),rep(4,12)))
-names(mainplot)[c(4,5,6)]<-c('low','hi','facet')
-
-mainplot$facet[mainplot$facet==1]<-"Zero Errors"
-mainplot$facet[mainplot$facet==2]<-"One Error"
-mainplot$facet[mainplot$facet==3]<-"Two Errors"
-mainplot$facet[mainplot$facet==4]<-"Three Errors"
-mainplot$facet<-factor(mainplot$facet,levels = c("Zero Errors",'One Error',
-                                                 "Two Errors","Three Errors"))
-
-mainplotb<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.factor(c(1,2,3,4,1,2,3,4,1,2,3,4)),
-                 rbind(rbind(mp1[9,],NA,NA,mp1[12,]),mp2[9:12,],mp3[9:12,],
-                       rbind(mp1a[9,],NA,NA,mp1a[12,]),mp2a[9:12,],mp3a[9:12,],
-                       rbind(mp1b[9,],NA,NA,mp1b[12,]),mp2b[9:12,],mp3b[9:12,],
-                       rbind(mp1c[9,],NA,NA,mp1c[12,]),mp2c[9:12,],mp3c[9:12,],
-                       rbind(mp1d[9,],NA,NA,mp1d[12,]),mp2d[9:12,],mp3d[9:12,]),
-                 c(rep(1,12),rep(2,12),rep(3,12),rep(4,12),rep(5,12)))
-names(mainplotb)[c(4,5,6)]<-c('low','hi','facet')
-
-mainplotb$facet[mainplotb$facet==1]<-'Ignore Check'
-mainplotb$facet[mainplotb$facet==2]<-"Zero Errors"
-mainplotb$facet[mainplotb$facet==3]<-"One Error"
-mainplotb$facet[mainplotb$facet==4]<-"Two Errors"
-mainplotb$facet[mainplotb$facet==5]<-"Three Errors"
-mainplotb$facet<-factor(mainplotb$facet,levels = c("Zero Errors",'One Error',
-                                                   "Two Errors","Three Errors",
-                                                   'Ignore Check'))
-
-
-
-
-
-ggplot(mainplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  facet_wrap(~facet,nrow = 2)+
-  geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
-  scale_x_discrete(labels=c('1'='Expert v Non','2'='Fact v Experience','3'='Gain v Loss','4'='Experience',
-                            '5'='Gain','6'='Loss'))+
-  labs(y = NULL,x = NULL)+
-  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.33,.33))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
+  theme(axis.text.x = element_text(face = 'bold',size = 8),
+        plot.caption = element_text(face = "italic",size = 8),
+        axis.text.y = element_text(size = 7),
         plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13.5),
+        strip.text.x = element_text(size = 8),
         strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"),
-        legend.title = element_text(color = "white"))+
-  coord_flip()+
-  geom_vline(xintercept = c(1.5,2.5),linetype = 'dotted')+
-  geom_hline(yintercept = 0,linetype = 'dashed')
-ggsave('manipulation.jpeg',width = 7,height = 7)
+        panel.spacing.x = unit(2.5, "mm"),
+        legend.title = element_text(color = "white"), legend.text = element_text(size = 8))+
+  coord_flip()+ theme(legend.title = element_blank(),legend.position = "none") +theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+                                                                              ggsave('mainplot.jpeg',width = 7,height = 7)
+
+############################################################
+########Appendix Figure 1 #### Interaction Effects ###
 
 
-
-
-ggplot(mainplotb, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  facet_wrap(~facet,nrow = 2)+
-  geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
-  scale_x_discrete(labels=c('1'='Expert v Non','2'='Fact v Experience','3'='Gain v Loss','4'='Experience',
-                            '5'='Gain','6'='Loss'))+
-  labs(y = NULL,x = NULL)+
-  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.33,.33))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13.5),
-        strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"),
-        legend.title = element_text(color = "white"))+
-  coord_flip()+
-  geom_vline(xintercept = c(1.5,2.5),linetype = 'dotted')+
-  geom_hline(yintercept = 0,linetype = 'dashed')
-ggsave('lowattention.jpeg',width = 7,height = 7)  
-
-
-####################################################
-#########INTERACTIONS##############################
-
-#row  
-ref<-as.factor(c(3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6,
-                 1,1,1,1,2,2,2,2,5,5,5,5,6,6,6,6,
-                 1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4))
-
-#facet
-facet<-c(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-         2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-         3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3)
-
-
+###Generate difference in means data for Appendix Figure 1
 
 ###expert fact versus non-expert fact, removed groups 3, 4, 7, 8 and 9 so it compares
 #groups 1 and 2 to groups 5 and 6
@@ -357,8 +492,6 @@ fact2<-rbind(fact2[1,],NA,NA,fact2[2,])
 fact3<-condinterval(dataclean,c(1,5),c(3,4,7,8,9),bootnum = 1000)[9:12,]
 fact4<-condinterval(dataclean,c(3,7),c(1,2,5,6,9),bootnum = 1000)[9:12,]
 
-
-
 #### gain/loss,  expert then non   
 gain1<-rbind(condinterval(dataclean,c(1,3),c(5,6,7,8,9),bootnum = 1000)[c(9,12),])
 gain2<-rbind(condinterval(dataclean,c(5,7),c(1,2,3,4,9),bootnum = 1000)[c(9,12),])
@@ -370,12 +503,25 @@ gain3<-condinterval(dataclean,c(1,5),c(3,4,7,8,9),bootnum = 1000)[9:12,]
 gain4<-condinterval(dataclean,c(3,7),c(1,2,5,6,9),bootnum = 1000)[9:12,]
 
 
+###merge Appendix figure 1 data and add reference columns for graph
+
+#row  
+ref<-as.factor(c(3,3,3,3,4,4,4,4,5,5,5,5,6,6,6,6,
+                 1,1,1,1,2,2,2,2,5,5,5,5,6,6,6,6,
+                 1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4))
+
+#facet
+facet<-c(1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+         2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+         3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3)
+
 interactplot<-cbind(rbind(expt1,expt2,expt3,expt4,fact1,fact2,fact3,fact4,gain1,gain2,gain3,gain4),ref,facet,Treatment = as.factor(c(1,2,3,4)))
 interactplot$facet<-as.factor(ifelse(interactplot$facet==1,"Expert-Non",
                                      ifelse(interactplot$facet==2,"Fact-Experience"
                                             ,"Gain-Loss")))  
 names(interactplot)[c(2,3)]<-c('low','hi')
 
+###Graph Appendix Figure 1###
 ggplot(interactplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
   facet_wrap(~facet,nrow = 1)+
   geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
@@ -399,20 +545,74 @@ ggplot(interactplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,colo
   geom_hline(yintercept = 0,linetype = 'dashed')
 ggsave('interact.jpeg', width = 7, height = 7)
 
+                                                                              
+#################################################################
+######Appendix Figure 2 ### Interacting with Party Identification
 
 
-#########################################################
-########PID#############################################
+####The user defined function, bygroups, is similar to the previous user defined function, 
+####condinterval, but returns difference in differences rather than difference in means
+####values and confidence intervals. The difference in differences are between independent 
+####variable categories passed through the parameters.
+
+####see description of condinterval above for parameter descriptions not listed here:
+####listdiff requires a numeric list. The list should include one item that shares the name
+####of the idependent variable of interest within the data for difference in difference 
+####comparison. The values in the list are one of the groups of values that will be compared
+####listcompare is the same as list diff, except the list values are the other groups of
+####independent variable values being compared to the listdiff values.
+bootdata<-dataclean
+m<-8L
+ingroups<-c(1,2,3,4)
+excludedgroups<-9
+listdiff <- list(pid=c(1,2,3))
+listcompare <- list(pid = c(6,7,8))
+bootnum <- 1000
+listconditions<-NA
+
+bygroups<-function(bootdata,ingroups,excludedgroups="zzz",listdiff,listcompare,listconditions=NA,bootnum){
+  outcome<-rbind(rep(NA,12),rep(NA,12))
+  bootdata<-bootdata[-which(grepl(paste0(paste0(excludedgroups,sep = "|",collapse = ""),"zzz",collapse = ""),bootdata$group)),]
+  for(i in 1:bootnum){
+    temp<-as.data.frame(bootdata[sample(1:nrow(bootdata),nrow(bootdata),replace = TRUE),])
+    if(!is.na(listconditions)){
+      for(j in length(listconditions)){
+        k<-which(colnames(temp)== names(listconditions)[j])
+        temp<-temp[grep(listconditions[j],as.character(temp[,k])),]
+      }
+    }
+    m<-which(colnames(temp)==names(listdiff))
+    category1<-subset.data.frame(temp,temp[,m] %in% as.numeric(unlist(listdiff)))
+    category2<-subset.data.frame(temp,temp[,m] %in% unlist(listcompare))
+    ingtemp1<-category1[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category1$group)),99:102]
+    outgtemp1<-category1[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category1$group)),99:102]
+    ingtemp2<-category2[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category2$group)),99:102]
+    outgtemp2<-category2[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category2$group)),99:102]
+    
+    cat1treat<-(colMeans(data.matrix(ingtemp1))-colMeans(data.matrix(outgtemp1)))
+    cat2treat<-(colMeans(data.matrix(ingtemp2))-colMeans(data.matrix(outgtemp2)))
+    treatdiff<-cat1treat-cat2treat
+    
+    outcome<-rbind(outcome,c(cat1treat,cat2treat,treatdiff))
+  }
+  
+  returnvalues<-as.data.frame(cbind(colMeans(na.omit(outcome)),colQuantiles(na.omit(outcome),probs = c(.025,.975))))
+  names(returnvalues)[1]<-"means"
+  return(returnvalues)
+  
+}
 
 
 
+#####Generate difference in difference data for Appendix Figure 2
 pid1<-bygroups(dataclean,c(1,2,3,4),excludedgroups = 9,listdiff = list(pid=c(1,2,3)),listcompare = list(pid = c(6,7,8)),bootnum = 1000)
-pid1<-rbind(pid1[1,],NA,NA,pid1[4,],pid1[5,],NA,NA,pid1[8],pid1[9,],NA,NA,pid1[12,])
+pid1<-rbind(pid1[1,],NA,NA,pid1[4,],pid1[5,],NA,NA,pid1[8,],pid1[9,],NA,NA,pid1[12,])
 
 pid4<-bygroups(dataclean,c(1,3,5,7),excludedgroups = 9,listdiff = list(pid=c(1,2,3)),listcompare = list(pid = c(6,7,8)),bootnum = 1000)
 
 pid7<-bygroups(dataclean,c(1,2,5,6),excludedgroups = 9,listdiff = list(pid=c(1,2,3)),listcompare = list(pid = c(6,7,8)),bootnum = 1000)
 
+###Merge graph data and add reference columns
 pidplot<-cbind(ref = as.factor(c(3,3,3,3,2,2,2,2,1,1,1,1)),
                Dependent = c(1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,3,3,3,3,3,3,3,3,3,3,3,3),
                Treatment = as.factor(c(1,2,3,4)),rbind(pid1,pid4,pid7))
@@ -420,6 +620,7 @@ pidplot$Dependent<-as.factor(ifelse(pidplot$Dependent==1,'Expert-Non',
                                     ifelse(pidplot$Dependent==2,'Gain-Loss','Fact-Experience')))
 names(pidplot)[c(5,6)]<-c('low','hi')
 
+####Create Appendix Figure 2 Graph
 ggplot(pidplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
   facet_wrap(~Dependent,nrow = 1)+
   theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
@@ -442,220 +643,394 @@ ggplot(pidplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Tre
   geom_hline(yintercept = 0,linetype = 'dashed')
 ggsave('pid.jpeg',width = 7,height = 7)
 
-
-
-
-
-
-############################################################################################
-##############################comparing the 9 treatment condition############################################
-#############################################################################################
-#####below is function condinterval copied from the beginning of the document to remove
-#the necessity of running the whole code again
-
-
-
-
-rm(list=ls())
-library(XML)
-setwd("c:/Users/djl/Documents/summer project")
-library(rio)
-library(data.table)
-library(stringr)
-library(xlsx)
-library(matrixStats)
-library(ggplot2)
-library(fBasics)
-dataclean<-import("data_clean2.xlsx")
-dataclean<-dataclean[-which(is.na(dataclean$treatment1)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment2)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment3)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment4)),]
-
-dataclean$lowattention[which(dataclean$duplicate==1)]<-1
-summary(as.factor(dataclean$treatment4))
-
-dataclean$treatment1<-(dataclean$treatment1*(-1))+8
-dataclean$treatment2<-(as.numeric(dataclean$treatment2)*(-1))+8
-dataclean$treatment3<-(as.numeric(dataclean$treatment3)*(-1))+8
-dataclean$treatment4<-(as.numeric(dataclean$treatment4)*(-1))+8
-
-ggplot(dataclean, aes(x = duration_survey))+
-  geom_histogram(color ='white',size = 2.2)+
-  scale_x_continuous(limits =c(0,1000))+
-  theme_test()+
-  labs(y = 'Number of Respondents',x = 'Duration of Survey (in seconds)')
-ggsave('duration.jpeg',width = 7,height = 7)
-
-#BOOTDATA is our data but as done immediately above, you need to remove the NA's from our
-#treatment columns. 
-#INGROUPS are the treatment groups you want to look at, 1st 4 rows in the returned data
-#are mean and confidence intervals for these groups. Next 4 rows in returned data are
-#mean/CI for all other groups that are not excluded. Last 4 returned rows are the mean/CIs
-#for the difference between in groups and the other, not excluded groups.
-#EXCLUDEDGROUPS are entered the same way as ingroups and are those that will be removed 
-#from the ingroup/outgroup comparison. for example if we want to compare experts versus
-#non experts then we would want to exclude group 9, the control group
-#LISTCONDITIONS are variables and the variable values that we want to look. It requres list type data
-#where the names of the various list(s) are the variables(columns) in our data and the values
-#within the lists are the values want to select on. 
-#so pass in list(column name = "responses you want included", second column name = "responses 
-#for that variable that we are interested in", ect.) <-you can add more than one
-#value in a column by separating with '|'
-#BOOTNUM is the number of bootstrap samples to draw for creating confidence intervals
-
-condinterval<-function(bootdata,ingroups,excludedgroups=NA,listconditions=NA,bootnum){
-  
-  outcome<-rbind(rep(NA,12),rep(NA,12))
-  if(!is.na(excludedgroups[1])){
-    bootdata<-bootdata[-which(grepl(paste0(paste0(excludedgroups,sep = "|",collapse = ""),"zzz",collapse = ""),as.character(bootdata$group))),]}
-  for(i in 1:bootnum){
-    temp<-bootdata[sample(1:nrow(bootdata),nrow(bootdata),replace = TRUE),]
-    if(!is.na(listconditions)){
-      for(j in length(listconditions)){
-        k<-which(colnames(temp)== names(listconditions)[j])
-        temp<-temp[grep(listconditions[j],as.character(temp[,k])),]
-      }
-    }
-    ingrouptemp<-temp[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),as.character(temp$group))),22:25]
-    outgrouptemp<-temp[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),as.character(temp$group))),22:25]
-    outcome<-rbind(outcome,c(colMeans(data.matrix(ingrouptemp)),colMeans(data.matrix(outgrouptemp)),colMeans(data.matrix(ingrouptemp))-colMeans(data.matrix(outgrouptemp))))
-  }
-  
-  returnvalues<-as.data.frame(cbind(colMeans(na.omit(outcome)),colQuantiles(na.omit(outcome),probs = c(.025,.975))))
-  names(returnvalues)[1]<-"means"
-  return(returnvalues)
-  
+##############################################################\
+######APPENDIX 1 TAble 1 ### All Means ###
+meanandsd <- function(data,treatmentname,groupnumber=10){
+  sub<-data
+  if(groupnumber!=10){sub <- data %>% filter(group==groupnumber)}
+  m <- mean(unlist(sub[,treatmentname]),na.rm=T)
+  s <- sd(unlist(sub[,treatmentname]),na.rm=T)
+  z <- c(m,s)
+  return(z)
 }
 
-graphdataind<-rep(NA,5)
-graphdataint<-rep(NA,5)
+t1<- NA
+t2<-NA
+t3<-NA
+t4<-NA
+tp<-NA
+for(i in 1:10){
+t1[i] <- meanandsd(dataclean,"treatment1",i)[1]
+t2[i] <- meanandsd(dataclean,"treatment2",i)[1]
+t3[i] <- meanandsd(dataclean,"treatment3",i)[1]
+t4[i] <- meanandsd(dataclean,"treatment4",i)[1]
+tp[i] <- meanandsd(dataclean,c("treatment1","treatment2","treatment3","treatment4"),i)[1]
+  }
+
+values <- rbind(t1,t2,t3,t4,tp)
+values <-round(values,2)
+write.csv(values,"means.csv")
+
+for(i in 1:10){
+  t1[i] <- meanandsd(dataclean,"treatment1",i)[2]
+  t2[i] <- meanandsd(dataclean,"treatment2",i)[2]
+  t3[i] <- meanandsd(dataclean,"treatment3",i)[2]
+  t4[i] <- meanandsd(dataclean,"treatment4",i)[2]
+  tp[i] <- meanandsd(dataclean,c("treatment1","treatment2","treatment3","treatment4"),i)[2]
+}
+values2 <- rbind(t1,t2,t3,t4,tp)
+values2 <-round(values2,2)
+write.csv(values2,"sd.csv")
 
 
-######trust or experience
+######Appendix 1###
+#####T Tests#### 
+###Here we do t-tests to compare all groups with other groups###
 
+#T-test comparing controls with others
+t.test(dataclean$treatment1  ~  dataclean$control)
+t.test(dataclean$treatment2  ~  dataclean$control)
+t.test(dataclean$treatment3  ~  dataclean$control)
+t.test(dataclean$treatment4  ~  dataclean$control)
 
-summary(as.factor(dataclean$treatment4[dataclean$covid_family==1]))/nrow(dataclean[dataclean$covid_family==1,])
-summary(as.factor(dataclean$treatment4[dataclean$covid_family==2]))/nrow(dataclean[dataclean$covid_family==2,])
+#T-tests for Expertise, Fact and Gain-based statements for all treatments
+t.test(dataclean$treatment1 ~ dataclean$expertise)
+t.test(dataclean$treatment2 ~ dataclean$expertise)
+t.test(dataclean$treatment3 ~ dataclean$expertise)
+t.test(dataclean$treatment4 ~ dataclean$expertise)
 
-trustdata<-dataclean
-trustdata$covid_family<-ifelse(trustdata$covid_family==2,0,ifelse(trustdata$covid_family==1,1,NA))
+t.test(dataclean$treatment1 ~ dataclean$fact)
+t.test(dataclean$treatment2 ~ dataclean$fact)
+t.test(dataclean$treatment3 ~ dataclean$fact)
+t.test(dataclean$treatment4 ~ dataclean$fact)
 
-summary(lm(treatment4~covid_family+trust_cdc+trust_president,data=trustdata))
+t.test(dataclean$treatment1 ~ dataclean$gain)
+t.test(dataclean$treatment2 ~ dataclean$gain)
+t.test(dataclean$treatment3 ~ dataclean$gain)
+t.test(dataclean$treatment4 ~ dataclean$gain)
 
+#T-test for Expertise given fact
+t.test(dataclean[which(dataclean$fact==1),]$treatment1 ~ dataclean[which(dataclean$fact==1),]$expertise)
+t.test(dataclean[which(dataclean$fact==1),]$treatment2 ~ dataclean[which(dataclean$fact==1),]$expertise)
+t.test(dataclean[which(dataclean$fact==1),]$treatment3 ~ dataclean[which(dataclean$fact==1),]$expertise)
+t.test(dataclean[which(dataclean$fact==1),]$treatment4 ~ dataclean[which(dataclean$fact==1),]$expertise)
 
-
-#i<-1
-#for(i in 1:9){
-
-#sd<-colStdevs(dataclean[dataclean$group==i,c(22:25)])
-#graphdataind<-rbind(graphdataind,cbind(colMeans(dataclean[dataclean$group==i,c(22:25)],na.rm = TRUE),paste0('Group ',i),
-#                                       c("Self-Quarantine","Release Detainees","NCAA Football",
-#                                         'In-Person Ballots')))
-
-#if(i>8){next}
-#for(j in (i+1):9){
-#exclude<-1:9  
-#exclude<-exclude[-c(i,j)]
-
-#graphdataint<-rbind(graphdataint,cbind(condinterval(dataclean,i,excludedgroups = exclude,bootnum = 1000)[9:12,]
-#                                       ,paste0("Groups ",i,' & ',j),
-#                    c("Self-Quarantine","Release Detainees","NCAA Football",
-#                                                        'In-Person Ballots'))) 
-
-
-
-#}
-#}
-#graphdataind<-graphdataind[-1,]
-#graphdataint<-graphdataint[-1,]
-groups<-c('Group 1','Group 2','Group 3','Group 4','Group 5','Group 6','Group 7',
-          'Group 8','Group 9')
-Treatment<-c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots')
-distdata<-dataclean[,c(21:25)]
-output<-rep(NA,6)
-for(i in 1:1000){
-  tempdata<-distdata[sample(1:nrow(distdata),nrow(distdata),replace = TRUE),]
+#Function to do T-tests between Groups (treatment 1)
+t1perm <- function(dataclean,g1,g2){
+  t <- t.test(dataclean$treatment1[which(dataclean$group %in% g1)], dataclean$treatment1[which(dataclean$group %in% g2)])
+  delta <- list()
+  delta[[1]] <- paste(g1,collapse=",")
+  delta[[2]] <- paste(g2,collapse=",")
+  delta[[3]] <- length(dataclean$treatment2[which(dataclean$group %in% g1)])
+  delta[[4]] <- length(dataclean$treatment1[which(dataclean$group %in% g2)])
+  delta[[5]] <- t$estimate[1]
+  delta[[6]] <- t$estimate[2]
+  delta[[7]] <- t$p.value
+  return(delta)
+}
+dft1 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
+dft1[1,]<- rbind(unlist(t1perm(dataclean,c(1:8),9)))
+dft1[2,]<- rbind(unlist(t1perm(dataclean,c(1,2,3,4),9)))
+dft1[3,]<- rbind(unlist(t1perm(dataclean,c(5,6,7,8),9)))
+dft1[4,]<- rbind(unlist(t1perm(dataclean,c(1,2,5,6),9)))
+dft1[5,]<- rbind(unlist(t1perm(dataclean,c(3,4,7,8),9)))
+dft1[6,]<- rbind(unlist(t1perm(dataclean,c(1,3,5,7),9)))
+dft1[7,]<- rbind(unlist(t1perm(dataclean,c(2,4,6,8),9)))
+dft1[8,]<- rbind(unlist(t1perm(dataclean,c(5,6),9)))
+dft1[9,]<- rbind(unlist(t1perm(dataclean,c(3,4),9)))
+dft1[10,]<- rbind(unlist(t1perm(dataclean,c(7,8),9)))
+dft1[11,]<- rbind(unlist(t1perm(dataclean,c(1,3),9)))
+dft1[12,]<- rbind(unlist(t1perm(dataclean,c(2,4),9)))
+dft1[13,]<- rbind(unlist(t1perm(dataclean,c(5,7),9)))
+dft1[14,]<- rbind(unlist(t1perm(dataclean,c(6,8),9)))
+dft1[15,]<- rbind(unlist(t1perm(dataclean,c(1,2,3,4),c(5,6,7,8))))
+dft1[16,]<- rbind(unlist(t1perm(dataclean,c(1,2,5,6),c(3,4,7,8))))
+dft1[17,]<- rbind(unlist(t1perm(dataclean,c(1,3,5,7),c(2,4,6,8))))
+dft1[18,]<- rbind(unlist(t1perm(dataclean,c(1,2),c(5,6))))
+dft1[19,]<- rbind(unlist(t1perm(dataclean,c(3,4),c(7,8))))
+dft1[20,]<- rbind(unlist(t1perm(dataclean,c(1,3),c(2,4))))
+dft1[21,]<- rbind(unlist(t1perm(dataclean,c(5,7),c(6,8))))
+p<-22
+#Single Group Comparisons
+for(i in 1:9){
   for(j in 1:9){
-    for(k in 2:5){
-      output<-as.data.frame(rbind(output,c(quantile(tempdata[tempdata$group==j,k],
-                                                    probs=c(.022,.158,.842,.978),na.rm = TRUE,type = 2),
-                                           groups[j],Treatment[k-1])))
-    }
+    dft1[p,] <- t1perm(dataclean,i,j)
+    p <- p+1
   }
 }
-?quantile
-output<-output[-1,]
-options(scipen = 999)
-output<-as.data.frame(output)
-summary(as.factor(output[,3]))
-output[,1]<-as.numeric(output[,1])
-output[,2]<-as.numeric(output[,2])
-output[,3]<-as.numeric(output[,3])
-output[,4]<-as.numeric(output[,4])
+dft1 #No p-value below 0.05
 
+#Function to do T-tests between Groups(treatment 2)
+t2perm <- function(dataclean,g1,g2){
+  t <- t.test(dataclean$treatment2[which(dataclean$group %in% g1)], dataclean$treatment2[which(dataclean$group %in% g2)])
+  delta <- list()
+  delta[[1]] <- paste(g1,collapse=",")
+  delta[[2]] <- paste(g2,collapse=",")
+  delta[[3]] <- length(dataclean$treatment2[which(dataclean$group %in% g1)])
+  delta[[4]] <- length(dataclean$treatment2[which(dataclean$group %in% g2)])
+  delta[[5]] <- t$estimate[1]
+  delta[[6]] <- t$estimate[2]
+  delta[[7]] <- t$p.value
+  return(delta)
+}
+dft2 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
+dft2[1,]<- rbind(unlist(t2perm(dataclean,c(1:8),9)))
+dft2[2,]<- rbind(unlist(t2perm(dataclean,c(1,2,3,4),9)))
+dft2[3,]<- rbind(unlist(t2perm(dataclean,c(5,6,7,8),9)))
+dft2[4,]<- rbind(unlist(t2perm(dataclean,c(1,2,5,6),9)))
+dft2[5,]<- rbind(unlist(t2perm(dataclean,c(3,4,7,8),9)))
+dft2[6,]<- rbind(unlist(t2perm(dataclean,c(1,3,5,7),9)))
+dft2[7,]<- rbind(unlist(t2perm(dataclean,c(2,4,6,8),9)))
+dft2[8,]<- rbind(unlist(t2perm(dataclean,c(5,6),9)))
+dft2[9,]<- rbind(unlist(t2perm(dataclean,c(3,4),9)))
+dft2[10,]<- rbind(unlist(t2perm(dataclean,c(7,8),9)))
+dft2[11,]<- rbind(unlist(t2perm(dataclean,c(1,3),9)))
+dft2[12,]<- rbind(unlist(t2perm(dataclean,c(2,4),9)))
+dft2[13,]<- rbind(unlist(t2perm(dataclean,c(5,7),9)))
+dft2[14,]<- rbind(unlist(t2perm(dataclean,c(6,8),9)))
+dft2[15,]<- rbind(unlist(t2perm(dataclean,c(1,2,3,4),c(5,6,7,8))))
+dft2[16,]<- rbind(unlist(t2perm(dataclean,c(1,2,5,6),c(3,4,7,8))))
+dft2[17,]<- rbind(unlist(t2perm(dataclean,c(1,3,5,7),c(2,4,6,8))))
+dft2[18,]<- rbind(unlist(t2perm(dataclean,c(1,2),c(5,6))))
+dft2[19,]<- rbind(unlist(t2perm(dataclean,c(3,4),c(7,8))))
+dft2[20,]<- rbind(unlist(t2perm(dataclean,c(1,3),c(2,4))))
+dft2[21,]<- rbind(unlist(t2perm(dataclean,c(5,7),c(6,8))))
 
-
-graphdata<-matrix(NA,nrow = 36,ncol = 7)
-for(i in 1:4){
+p<-22
+#Single Group Comparisons
+for(i in 1:9){
   for(j in 1:9){
-    graphdata[(9*(i-1)+j),]<-c(colMeans(output[which(grepl(groups[j],output[,5])&grepl(Treatment[i],output[,6])),c(1:4)]),groups[j],Treatment[i],mean(distdata[distdata$group==j,(i+1)]))
-    
-    
+    dft2[p,] <- t2perm(dataclean,i,j)
+    p <- p+1
   }
 }
-graphdata<-as.data.frame(graphdata)
-graphdata[,1]<-as.numeric(graphdata[,1])
-graphdata[,2]<-as.numeric(graphdata[,2])
-graphdata[,3]<-as.numeric(graphdata[,3])
-graphdata[,4]<-as.numeric(graphdata[,4])
-graphdata[,7]<-as.numeric(graphdata[,7])
+
+dft2 #No p-value below 0.05
+#Function to do T-tests between Groups(treatment 3)
+t3perm <- function(dataclean,g1,g2){
+  t <- t.test(dataclean$treatment3[which(dataclean$group %in% g1)], dataclean$treatment3[which(dataclean$group %in% g2)])
+  delta <- list()
+  delta[[1]] <- paste(g1,collapse=",")
+  delta[[2]] <- paste(g2,collapse=",")
+  delta[[3]] <- length(dataclean$treatment3[which(dataclean$group %in% g1)])
+  delta[[4]] <- length(dataclean$treatment3[which(dataclean$group %in% g2)])
+  delta[[5]] <- t$estimate[1]
+  delta[[6]] <- t$estimate[2]
+  delta[[7]] <- t$p.value
+  return(delta)
+}
+dft3 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
+dft3[1,]<- rbind(unlist(t3perm(dataclean,c(1:8),9)))
+dft3[2,]<- rbind(unlist(t3perm(dataclean,c(1,2,3,4),9)))
+dft3[3,]<- rbind(unlist(t3perm(dataclean,c(5,6,7,8),9)))
+dft3[4,]<- rbind(unlist(t3perm(dataclean,c(1,2,5,6),9)))
+dft3[5,]<- rbind(unlist(t3perm(dataclean,c(3,4,7,8),9)))
+dft3[6,]<- rbind(unlist(t3perm(dataclean,c(1,3,5,7),9)))
+dft3[7,]<- rbind(unlist(t3perm(dataclean,c(2,4,6,8),9)))
+dft3[8,]<- rbind(unlist(t3perm(dataclean,c(5,6),9)))
+dft3[9,]<- rbind(unlist(t3perm(dataclean,c(3,4),9)))
+dft3[10,]<- rbind(unlist(t3perm(dataclean,c(7,8),9)))
+dft3[11,]<- rbind(unlist(t3perm(dataclean,c(1,3),9)))
+dft3[12,]<- rbind(unlist(t3perm(dataclean,c(2,4),9)))
+dft3[13,]<- rbind(unlist(t3perm(dataclean,c(5,7),9)))
+dft3[14,]<- rbind(unlist(t3perm(dataclean,c(6,8),9)))
+dft3[15,]<- rbind(unlist(t3perm(dataclean,c(1,2,3,4),c(5,6,7,8))))
+dft3[16,]<- rbind(unlist(t3perm(dataclean,c(1,2,5,6),c(3,4,7,8))))
+dft3[17,]<- rbind(unlist(t3perm(dataclean,c(1,3,5,7),c(2,4,6,8))))
+dft3[18,]<- rbind(unlist(t3perm(dataclean,c(1,2),c(5,6))))
+dft3[19,]<- rbind(unlist(t3perm(dataclean,c(3,4),c(7,8))))
+dft3[20,]<- rbind(unlist(t3perm(dataclean,c(1,3),c(2,4))))
+dft3[21,]<- rbind(unlist(t3perm(dataclean,c(5,7),c(6,8))))
+
+p<-22
+#Single Group Comparisons
+for(i in 1:9){
+  for(j in 1:9){
+    dft3[p,] <- t3perm(dataclean,i,j)
+    p <- p+1
+  }
+}
+dft3 #No p-value below 0.05
+#Function to do T-tests between Groups(treatment4)
+t4perm <- function(dataclean,g1,g2){
+  t <- t.test(dataclean$treatment4[which(dataclean$group %in% g1)], dataclean$treatment4[which(dataclean$group %in% g2)])
+  delta <- list()
+  delta[[1]] <- paste(g1,collapse=",")
+  delta[[2]] <- paste(g2,collapse=",")
+  delta[[3]] <- length(dataclean$treatment4[which(dataclean$group %in% g1)])
+  delta[[4]] <- length(dataclean$treatment4[which(dataclean$group %in% g2)])
+  delta[[5]] <- t$estimate[1]
+  delta[[6]] <- t$estimate[2]
+  delta[[7]] <- t$p.value
+  return(delta)
+}
+dft4 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
+dft4[1,]<- rbind(unlist(t4perm(dataclean,c(1:8),9)))
+dft4[2,]<- rbind(unlist(t4perm(dataclean,c(1,2,3,4),9)))
+dft4[3,]<- rbind(unlist(t4perm(dataclean,c(5,6,7,8),9)))
+dft4[4,]<- rbind(unlist(t4perm(dataclean,c(1,2,5,6),9)))
+dft4[5,]<- rbind(unlist(t4perm(dataclean,c(3,4,7,8),9)))
+dft4[6,]<- rbind(unlist(t4perm(dataclean,c(1,3,5,7),9)))
+dft4[7,]<- rbind(unlist(t4perm(dataclean,c(2,4,6,8),9)))
+dft4[8,]<- rbind(unlist(t4perm(dataclean,c(5,6),9)))
+dft4[9,]<- rbind(unlist(t4perm(dataclean,c(3,4),9)))
+dft4[10,]<- rbind(unlist(t4perm(dataclean,c(7,8),9)))
+dft4[11,]<- rbind(unlist(t4perm(dataclean,c(1,3),9)))
+dft4[12,]<- rbind(unlist(t4perm(dataclean,c(2,4),9)))
+dft4[13,]<- rbind(unlist(t4perm(dataclean,c(5,7),9)))
+dft4[14,]<- rbind(unlist(t4perm(dataclean,c(6,8),9)))
+dft4[15,]<- rbind(unlist(t4perm(dataclean,c(1,2,3,4),c(5,6,7,8))))
+dft4[16,]<- rbind(unlist(t4perm(dataclean,c(1,2,5,6),c(3,4,7,8))))
+dft4[17,]<- rbind(unlist(t4perm(dataclean,c(1,3,5,7),c(2,4,6,8))))
+dft4[18,]<- rbind(unlist(t4perm(dataclean,c(1,2),c(5,6))))
+dft4[19,]<- rbind(unlist(t4perm(dataclean,c(3,4),c(7,8))))
+dft4[20,]<- rbind(unlist(t4perm(dataclean,c(1,3),c(2,4))))
+dft4[21,]<- rbind(unlist(t4perm(dataclean,c(5,7),c(6,8))))
+
+p<-22
+#Single Group Comparisons
+for(i in 1:9){
+  for(j in 1:9){
+    dft4[p,] <- t4perm(dataclean,i,j)
+    p <- p+1
+  }
+}
+
+dft4 #No p-value below 0.05
+
+##################################################################################
+#######Power Test
+
+#Power Analysis for T-Test
+power.t.test(n=502,sig.level=0.05,power=0.9)
 
 
-names(graphdata)<-c('lowest','low','hi','highest','Groups',"Treatment",'means')
-names(graphdataint)[2:5]<-c('low','hi','Groups',"Treatment")
+#####TOST Procedure##### APPENDIX 1####
 
-graphdata$Treatment<-factor(graphdata$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
-graphdata$Groups<-factor(graphdata$Groups,levels = c('Group 1','Group 2','Group 3',
-                                                     'Group 4','Group 5','Group 6',
-                                                     'Group 7','Group 8','Group 9'))
+#this function perfroms a two-one sided t-test between two groups as specified
+preparedata <- function(data,var1, var2){
+  data1 <- data %>% select(all_of(c(var1,var2))) %>% rename("value"=var1, "group"= var2)
+  vec1 <- data1[which(data1$group==0),]$value
+  vec2 <- data1[which(data1$group==1),]$value
+  m1 <- mean(vec1,na.rm=T)
+  sd1 <- sd(vec1,na.rm=T)
+  n1 <- length(vec1)
+  m2 <- mean(vec2,na.rm=T)
+  sd2 <- sd(vec2,na.rm=T)
+  n2 <- length(vec2)
+  TOSTtwo(m1=m1, m2=m2, sd1=sd1, sd2=sd2, n1=n1, n2=n2, low_eqbound_d=-0.1, high_eqbound_d=0.1, alpha = 0.025, var.equal = TRUE)
+}
 
-ggplot(graphdata, aes(x = Groups,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  geom_errorbar(position = 'dodge2')+geom_point(position = position_dodge(width = .9),size = 3)+
-  labs(y = NULL,x = NULL)+
-  scale_y_continuous(breaks=c(1,2,3,4,5,6,7),labels = c('1'='Strongly Agree','2'='','3'='Somewhat Disagree',"4" = "",'5'="Somewhat Agree",'6'='','7'='Strongly Agree'))+
-  theme_test()+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(axis.text.x = element_text(size = 11.5),
-        plot.caption = element_text(face = "italic",size = 11.5),
-        axis.text.y = element_text(size = 11.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 11),
-        legend.title = element_text(color = "white"),
-        strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"))+
-  coord_flip()+
-  geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5),linetype = 'dotted')
-ggsave('treatmentcond.jpeg', width = 7, height = 7)
-?quantile
+preparedata(dataclean,"treatment1","expertise")
+preparedata(dataclean,"treatment2","expertise")
+preparedata(dataclean,"treatment3","expertise")
+preparedata(dataclean,"treatment4","expertise")
+
+preparedata(dataclean,"treatment1","fact")
+preparedata(dataclean,"treatment2","fact")
+preparedata(dataclean,"treatment3","fact")
+preparedata(dataclean,"treatment4","fact")
+
+preparedata(dataclean,"treatment1","gain")
+preparedata(dataclean,"treatment2","gain")
+preparedata(dataclean,"treatment3","gain")
+preparedata(dataclean,"treatment4","gain")
 
 ###################################################################
+####Appendix Figures 8 - 11 Bayes Factor
+
+###Created user defined function to generate Bayes Factors comparing with treatment 
+###conditions across different priors
+
+###columndv is the column name of the relevant treatment vignette (meaing treatment1, 
+###treatment2, ect...)
+###columnvar is the relevant independent variable, we will be comparing pooled treatment
+###conditions fact v experience, expert v nonexper, and gain v loss
+###remove control when inputing data, did not include remove condition parameter
+bfgraph<-function(databf,columndv,columnvar){
+  tref<-which(names(databf)==columndv)
+  vref<-which(names(databf)==columnvar)
+  output<-c(NA,NA)
+  for(i in seq(from =.01,to=2, by=.01)){
+    output<-rbind(output,cbind(extractBF(ttestBF(x=subset(databf[,tref],databf[,vref]==1),y=subset(databf[,tref],databf[,vref]==0),rscale = i)),i))
+  }
+  return(output[-1,])
+}
+
+####Data for bayes factor analysis removes some columns from full data, this is reused in 
+####later sections with bayes factors
+bfdata<-na.omit(dataclean[,c(22:25,42,44,43,40,46,9,47,10,11,45)])
+
+bfdata<-dataclean
+###Generate graph data related to expert versus non-expert treatment conditions
+expertgraph<-bind_rows(cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment1',columnvar = 'expertise'),
+                             Treatment = "Self-Quarantine"),
+                       cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment2',
+                                     columnvar = 'expertise'),Treatment = 'Release Detainees'),
+                       cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment3',columnvar = 'expertise'),
+                             Treatment = "NCAA Football"),
+                       cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment4',columnvar = 'expertise'),
+                             Treatment = "In-Person Ballots"))
+expertgraph$Treatment<-factor(expertgraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
+expertgraph$test<-factor('Expert')
+
+###Generate graph data related to fact versus experience treatement conditions
+factgraph<-bind_rows(cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment1',columnvar = 'fact'),
+                           Treatment = "Self-Quarantine"),
+                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment2',columnvar = 'fact'),
+                           Treatment = 'Release Detainees'),
+                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment3',columnvar = 'fact'),
+                           Treatment = "NCAA Football"),
+                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment4',columnvar = 'fact'),
+                           Treatment = "In-Person Ballots"))
+factgraph$Treatment<-factor(factgraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
+factgraph$test<-factor('Fact')
 
 
+###Generate graph data related to Gain v Loss treatement conditions
+gaingraph<-bind_rows(cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment1',columnvar = 'gain'),
+                           Treatment = "Self-Quarantine"),
+                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment2',columnvar = 'gain'),
+                           Treatment = 'Release Detainees'),
+                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment3',columnvar = 'gain'),
+                           Treatment = "NCAA Football"),
+                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment4',columnvar = 'gain'),
+                           Treatment = "In-Person Ballots"))
+gaingraph$Treatment<-factor(gaingraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
+gaingraph$test<-factor('Gain')
+
+#####Generate data for All treatment conditions compared to control
+tcgraph<-bind_rows(cbind(bfgraph(bfdata,columndv = 'treatment1',columnvar = 'treatment'),
+                         Treatment = "Self-Quarantine"),
+                   cbind(bfgraph(bfdata,columndv = 'treatment2',columnvar = 'treatment'),
+                         Treatment = 'Release Detainees'),
+                   cbind(bfgraph(bfdata,columndv = 'treatment3',columnvar = 'treatment'),
+                         Treatment = "NCAA Football"),
+                   cbind(bfgraph(bfdata,columndv = 'treatment4',columnvar = 'treatment'),
+                         Treatment = "In-Person Ballots"))
+tcgraph$Treatment<-factor(tcgraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
+tcgraph$test<-factor('Treat/Control')
+
+fullgraph<-rbind(expertgraph,factgraph,gaingraph,tcgraph)
+
+###Created graphs for each of the four treatment vignettes
+###We add a point for standard cauchy prior (r in the cauchy prior distribution)
+###This is a BF10 two sided test. The first number indicates numberator and second
+###indicates the denominator, so here the null is in the denominator.
+###We add hlines for some of the confidence level cut-offs indicated in Bayes Factor literature
+hline<-data.frame(texts=c('1/3','1/10','1/20','1/30'),num=c(1/3,1/10,1/20,0.005))
 
 
-ggplot(graphdataint, aes(x = Groups,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
+####Graph for Self Quarantine vignette
+ggplot(fullgraph[fullgraph$Treatment%in%'Self-Quarantine',], aes(x = i,y=bf,shape = test,color=test))+
+  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'Self-Quarantine'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
   #facet_wrap(~facet,nrow = 1)+
-  geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
-  scale_x_discrete(labels=c('1'='Expert','2'='Nonexpert','3'='Fact','4'='Experience',
-                            '5'='Gain','6'='Loss'))+
   labs(y = NULL,x = NULL)+
-  scale_y_continuous(breaks=c(-.6,-.4,-.2,0,.2,.4,.6),limits = c(-.66,.66))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
   theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        axis.title= element_text(size=18,face = 'bold'),
         plot.caption = element_text(face = "italic",size = 13.5),
         axis.text.y = element_text(size = 13.5),
         plot.title = element_text(hjust = .5),
@@ -663,138 +1038,609 @@ ggplot(graphdataint, aes(x = Groups,y=means,ymin=low,ymax=hi,shape = Treatment,c
         legend.title = element_text(color = "white"),
         strip.background = element_rect(colour="white", fill="white"),
         panel.spacing.x = unit(5.5, "mm"))+
+  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
+  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
+ggsave('bfttest1.jpeg', width = 7, height = 7)
+
+
+####Graph for Release Detainees vignette
+ggplot(fullgraph[fullgraph$Treatment%in%'Release Detainees',], aes(x = i,y=bf,shape = test,color=test))+
+  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'Release Detainees'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
+  #facet_wrap(~facet,nrow = 1)+
+  labs(y = NULL,x = NULL)+
+  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.title = element_text(size=18,face = 'bold'),
+        axis.text.y = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 13),
+        legend.title = element_text(color = "white"),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.spacing.x = unit(5.5, "mm"))+
+  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
+  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
+ggsave('bfttest2.jpeg', width = 7, height = 7)
+
+
+
+####Graph for NCAA Football vignette
+ggplot(fullgraph[fullgraph$Treatment%in%'NCAA Football',], aes(x = i,y=bf,shape = test,color=test))+
+  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'NCAA Football'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
+  #facet_wrap(~facet,nrow = 1)+
+  labs(y = NULL,x = NULL)+
+  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.title= element_text(size=18,face = 'bold'),
+        axis.text.y = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 13),
+        legend.title = element_text(color = "white"),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.spacing.x = unit(5.5, "mm"))+
+  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')
++  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
+ggsave('bfttest3.jpeg', width = 7, height = 7)
+
+
+
+#####Graph for In-Person Ballots vignette
+ggplot(fullgraph[fullgraph$Treatment%in%'In-Person Ballots',], aes(x = i,y=bf,shape = test,color=test))+
+  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'In-Person Ballots'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
+  #facet_wrap(~facet,nrow = 1)+
+  labs(y = NULL,x = NULL)+
+  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.title= element_text(size=18,face = 'bold'),
+        axis.text.y = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 13),
+        legend.title = element_text(color = "white"),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.spacing.x = unit(5.5, "mm"))+
+  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
+  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
+ggsave('bfttest4.jpeg', width = 7, height = 7)
+
+##########################################################################
+#####Figure 3, Appendix Tables 3, 4, 5, and 6### Regression Models####
+
+
+####We calculate OLS models that provide coefficient estimates in Figure 3 and Appendix 
+####Table 6
+model1g <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean))
+model2g <- lm.beta(lm(treatment2 ~ treatment  + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean))
+model3g <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean))
+model4g <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean))
+
+###Coefficient estimates in model summaries
+summary(model1g)
+summary(model2g)
+summary(model3g)
+summary(model4g)
+
+
+####Confidence intervals are in Figure 3 are derived from nonparametric bootstrapping.
+output1<-rep(NA,18)
+output2<-rep(NA,18)
+output3<-rep(NA,18)
+output4<-rep(NA,18)
+for(i in 1:1000){
+  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean[sample(1:nrow(dataclean),nrow(dataclean),replace = TRUE),]))
+  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean[sample(1:nrow(dataclean),nrow(dataclean),replace = TRUE),]))
+  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean[sample(1:nrow(dataclean),nrow(dataclean),replace = TRUE),]))
+  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, dataclean[sample(1:nrow(dataclean),nrow(dataclean),replace = TRUE),]))
+  output1<-rbind(output1,coef(temp1,standardized = TRUE))
+  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
+  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
+  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
+output1<-output1[-1,]
+output2<-output2[-1,]
+output3<-output3[-1,]
+output4<-output4[-1,]
+
+#####Coefficient estimates, bootstrapped confidence interval values, and reference columns
+#####are combined for graphing purposes.
+plotdata<-rbind(cbind(coef(model1g,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
+                cbind(c(coef(model2g,standardized=TRUE)[c(1,2)],NA,coef(model2g,standardized=TRUE)[c(3:17)]),colQuantiles(output2,probs = c(.025,.975)),2)[-1,],
+                cbind(c(coef(model3g,standardized=TRUE)[c(1,2)],NA,coef(model3g,standardized=TRUE)[c(3:17)]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
+                cbind(coef(model4g,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),4)[-1,])
+plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
+
+colnames(plotdata)<-c('means','low','hi','Treatment','ref')
+plotdata$Treatment<-as.factor(plotdata$Treatment)
+plotdata$ref<-as.factor(plotdata$ref)
+
+######Generate Figure 3 plot.
+ggplot(plotdata, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
+  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
+  geom_errorbar(position = 'dodge2',size = .9,width = 1)+geom_point(position = position_dodge(width = 1),size = 2.2)+
+  scale_x_discrete(labels=c('1'='Treatment','2'='Expert','3'='Gain Frame','4'='Fact Frame',
+                            '5'='Female','6'='Education','7'='Party ID','8'="Don't Know PID"
+                            ,'9'='Ideology','10'='Age','11'='Fox Viewer','12'='NBC Viewer',
+                            '13'='CNN Viewer','14'='ABC Viewer','15'='Facebook News',
+                            '16'='Twitter News','17'='Instagram News'))+
+  labs(y = NULL,x = NULL)+
+  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.26,.26))+
+  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.text.y = element_text(size = 13.5),
+        strip.text.x = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.background = element_rect(colour="white", fill="white"),
+        legend.title = element_text(color = "white"))+
   coord_flip()+
-  geom_vline(xintercept = seq(from=1.5,to = 35.5,by = 1),linetype = 'dotted')+
+  geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5,16.5),linetype = 'dotted')+
   geom_hline(yintercept = 0,linetype = 'dashed')
-ggsave('treatinteractions.jpeg', width = 7, height = 24)
+ggsave('ols.jpeg',width = 7,height = 7)
+
+
+###############################################################33
+#####Manipulation Check Appendix Figure 3
+
+
+
+#####User defined function condinterval returns the difference in means and respective 
+#####confidence intervals for the most relevant pooled treatment conditions. Data passed to
+#####condinterval are subset by various manipulation check thresholds.
+
+##Calculate the difference in means between expert v nonexpert, fact v experience and 
+##gain v loss for respondents with zero errors in the manipulation check.
+#Expert v non
+mp1a<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,3,4),c(9),bootnum = 1000)
+#Gain v Loss
+mp2a<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,3,5,7),c(9),bootnum = 1000)
+#Fact V Experience
+mp3a<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,5,6),c(9),bootnum = 1000)
+
+##Manipulation check threashold set at one allowed error.
+#Expert v non
+mp1b<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,3,4),c(9),bootnum = 1000)
+#Gain v Loss
+mp2b<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,3,5,7),c(9),bootnum = 1000)
+#Fact V Experience
+mp3b<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,5,6),c(9),bootnum = 1000)
+
+##Manipulation check threashold set at 2 allowed errors
+#Expert v non
+mp1c<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,3,4),c(9),bootnum = 1000)
+#Gain v Loss
+mp2c<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,3,5,7),c(9),bootnum = 1000)
+#Fact V Experience
+mp3c<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,5,6),c(9),bootnum = 1000)
+
+##Mapipulation check threashold set at 3 allowed errors
+#Expert v non
+mp1d<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,3,4),c(9),bootnum = 1000)
+#Gain v Loss
+mp2d<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,3,5,7),c(9),bootnum = 1000)
+#Fact V Experience
+mp3d<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,5,6),c(9),bootnum = 1000)
+
+
+###Merge all difference in means and confidence intervals with appropriate references for
+###graphing.
+
+mainplot<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.factor(c(1,2,3,4,1,2,3,4,1,2,3,4)),
+                rbind(rbind(mp1a[9,],NA,NA,mp1a[12,]),mp2a[9:12,],mp3a[9:12,],
+                      rbind(mp1b[9,],NA,NA,mp1b[12,]),mp2b[9:12,],mp3b[9:12,],
+                      rbind(mp1c[9,],NA,NA,mp1c[12,]),mp2c[9:12,],mp3c[9:12,],
+                      rbind(mp1d[9,],NA,NA,mp1d[12,]),mp2d[9:12,],mp3d[9:12,]),
+                c(rep(1,12),rep(2,12),rep(3,12),rep(4,12)))
+names(mainplot)[c(4,5,6)]<-c('low','hi','facet')
+
+mainplot$facet[mainplot$facet==1]<-"Zero Errors"
+mainplot$facet[mainplot$facet==2]<-"One Error"
+mainplot$facet[mainplot$facet==3]<-"Two Errors"
+mainplot$facet[mainplot$facet==4]<-"Three Errors"
+mainplot$facet<-factor(mainplot$facet,levels = c("Zero Errors",'One Error',
+                                                 "Two Errors","Three Errors"))
+
+###Plot for difference in mean between relevant treatment conditions at various
+###manipulation check threasholds.
+ggplot(mainplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
+  facet_wrap(~facet,nrow = 2)+
+  geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
+  scale_x_discrete(labels=c('1'='Expert v Non','2'='Fact v Experience','3'='Gain v Loss','4'='Experience',
+                            '5'='Gain','6'='Loss'))+
+  labs(y = NULL,x = NULL)+
+  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.33,.33))+
+  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.text.y = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 13.5),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.spacing.x = unit(5.5, "mm"),
+        legend.title = element_text(color = "white"))+
+  coord_flip()+
+  geom_vline(xintercept = c(1.5,2.5),linetype = 'dotted')+
+  geom_hline(yintercept = 0,linetype = 'dashed')
+ggsave('manipulation.jpeg',width = 7,height = 7)
+
+
+
+###########################################################
+#####Appendix Figure 4 Low Attention and Manipulation Checks
+
+
+#####We run the condinterval function at various manipulation check threasholds for 
+#####difference in mean confidence intervals similar to the above section, however we 
+#####add the condition that all individuals categorized as low attention are removed. 
+#####Individuals are coded as '1' in the binary lowattention variable by entering 
+#####inappropriate response to open input questions. For example, when asked what year 
+#####they were born some respondents entered letters or numbers that do not correspond 
+#####to living people. 
+
+
+##In addition to various manipulation check threasholds, we also calculated difference of 
+##means between treatment conditions of interest with low attention removed and ignoring
+##the manipulation check. We compare experts to nonexperts, gain framing to loss framing,
+##and fact framing to experience framing. 
+
+#Expert v non
+mp1<-condinterval(dataclean,c(1,2,3,4),excludedgroups = c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Gain v Loss
+mp2<-condinterval(dataclean,c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Fact V Experience
+mp3<-condinterval(dataclean,c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+
+
+##Manipulation check threashold set at zero allowed error.
+#Expert v non
+mp1e<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Gain v Loss
+mp2e<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Fact V Experience
+mp3e<-condinterval(dataclean[dataclean$netmanipcheck>3,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+
+
+###Manipulation chec threashold set to one error allows
+#Expert v nonexpert
+mp1f<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Gain v Loss
+mp2f<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Fact V Experience
+mp3f<-condinterval(dataclean[dataclean$netmanipcheck>2,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+
+
+#####Manipulation check threashold set at two allowed error.
+#Expert v non
+mp1g<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Gain v Loss
+mp2g<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Fact V Experience
+mp3g<-condinterval(dataclean[dataclean$netmanipcheck>1,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+
+
+##Manipulation check threashold set at three allowed error.
+#Expert v non
+mp1h<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,3,4),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Gain v Loss
+mp2h<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,3,5,7),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+#Fact V Experience
+mp3h<-condinterval(dataclean[dataclean$netmanipcheck>0,],c(1,2,5,6),c(9),bootnum = 1000,listconditions = list(lowattention = '0'))
+
+
+##Combine data and reference columns for graphing purposes
+mainplotb<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.factor(c(1,2,3,4,1,2,3,4,1,2,3,4)),
+                 rbind(rbind(mp1[9,],NA,NA,mp1[12,]),mp2[9:12,],mp3[9:12,],
+                       rbind(mp1e[9,],NA,NA,mp1e[12,]),mp2e[9:12,],mp3e[9:12,],
+                       rbind(mp1f[9,],NA,NA,mp1f[12,]),mp2f[9:12,],mp3f[9:12,],
+                       rbind(mp1g[9,],NA,NA,mp1g[12,]),mp2g[9:12,],mp3g[9:12,],
+                       rbind(mp1h[9,],NA,NA,mp1h[12,]),mp2h[9:12,],mp3h[9:12,]),
+                 c(rep(1,12),rep(2,12),rep(3,12),rep(4,12),rep(5,12)))
+names(mainplotb)[c(4,5,6)]<-c('low','hi','facet')
+
+mainplotb$facet[mainplotb$facet==1]<-'Ignore Check'
+mainplotb$facet[mainplotb$facet==2]<-"Zero Errors"
+mainplotb$facet[mainplotb$facet==3]<-"One Error"
+mainplotb$facet[mainplotb$facet==4]<-"Two Errors"
+mainplotb$facet[mainplotb$facet==5]<-"Three Errors"
+mainplotb$facet<-factor(mainplotb$facet,levels = c("Zero Errors",'One Error',
+                                                   "Two Errors","Three Errors",
+                                                   'Ignore Check'))
+
+
+###Plot Appendix Figure 4
+ggplot(mainplotb, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
+  facet_wrap(~facet,nrow = 2)+
+  geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
+  scale_x_discrete(labels=c('1'='Expert v Non','2'='Fact v Experience','3'='Gain v Loss','4'='Experience',
+                            '5'='Gain','6'='Loss'))+
+  labs(y = NULL,x = NULL)+
+  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.33,.33))+
+  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.text.y = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 13.5),
+        strip.background = element_rect(colour="white", fill="white"),
+        panel.spacing.x = unit(5.5, "mm"),
+        legend.title = element_text(color = "white"))+
+  coord_flip()+
+  geom_vline(xintercept = c(1.5,2.5),linetype = 'dotted')+
+  geom_hline(yintercept = 0,linetype = 'dashed')
+ggsave('lowattention.jpeg',width = 7,height = 7)  
 
 
 
 
 
 
+#################################################
+#####Appendix Figure 5 OLS varying inclusion of low attention and manipulation checks
+
+#Create data with low attention removed and generate OLS coefficient estimates and respective
+#conficence intervals.
+data2<-dataclean[which(dataclean$lowattention==0),]
+modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+
+output1<-rep(NA,18)
+output2<-rep(NA,18)
+output3<-rep(NA,18)
+output4<-rep(NA,18)
+for(i in 1:1000){
+  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  output1<-rbind(output1,coef(temp1,standardized = TRUE))
+  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
+  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
+  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
+output1<-output1[-1,]
+output2<-output2[-1,]
+output3<-output3[-1,]
+output4<-output4[-1,]
+
+##Combine results and reference columns in a plotting dataframe. Subsequent coefficients
+##and confidence intervals will be added to 'fullmanplot' created here.
+plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
+                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
+                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
+                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
+plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
+
+colnames(plotdata)<-c('means','low','hi','Treatment','ref')
+plotdata$Treatment<-as.factor(plotdata$Treatment)
+plotdata$ref<-as.factor(plotdata$ref)
+fullmanplot<-cbind(plotdata,'Subset'='Hi Focus')
+
+
+#####Overwrite low attention data with additional condition of zero manipulation check
+##errors. Coefficient estimates and confidence intervals are generated in a similar manner,
+##assigned references, and combined into 'fullmanplot' for a facet wrapped Appendix Figure 5.
+
+data2<-dataclean[which(dataclean$lowattention==0&dataclean$netmanipcheck==4),]
+modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+
+output1<-rep(NA,18)
+output2<-rep(NA,18)
+output3<-rep(NA,18)
+output4<-rep(NA,18)
+for(i in 1:1000){
+  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  output1<-rbind(output1,coef(temp1,standardized = TRUE))
+  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
+  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
+  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
+####error
+output1<-output1[-1,]
+output2<-output2[-1,]
+output3<-output3[-1,]
+output4<-output4[-1,]
+
+plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
+                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
+                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
+                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
+plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
+
+colnames(plotdata)<-c('means','low','hi','Treatment','ref')
+plotdata$Treatment<-as.factor(plotdata$Treatment)
+plotdata$ref<-as.factor(plotdata$ref)
+fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='No Errors & Hi Focus'))
+
+
+#####Overwrite low attention data with  the low attention condition replaced by only a 
+##zero manipulation check error condition. Coefficient estimates and confidence intervals 
+##are generated in a similar manner, assigned references, and combined into 'fullmanplot' 
+##for a facet wrapped Appendix Figure 5.
+
+data2<-dataclean[which(dataclean$netmanipcheck==4),]
+modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+
+output1<-rep(NA,18)
+output2<-rep(NA,18)
+output3<-rep(NA,18)
+output4<-rep(NA,18)
+for(i in 1:1000){
+  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  output1<-rbind(output1,coef(temp1,standardized = TRUE))
+  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
+  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
+  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
+output1<-output1[-1,]
+output2<-output2[-1,]
+output3<-output3[-1,]
+output4<-output4[-1,]
+
+plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
+                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
+                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
+                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
+plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
+
+colnames(plotdata)<-c('means','low','hi','Treatment','ref')
+plotdata$Treatment<-as.factor(plotdata$Treatment)
+plotdata$ref<-as.factor(plotdata$ref)
+
+fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='No Errors'))
+
+
+#####Overwrite low attention data with the addition of a low manipulation check requirement
+##of less than three errors. Coefficient estimates and confidence intervals 
+##are generated in a similar manner, assigned references, and combined into 'fullmanplot' 
+##for a facet wrapped Appendix Figure 5.
+
+data2<-dataclean[which(dataclean$netmanipcheck>0&dataclean$lowattention==0),]
+modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+
+output1<-rep(NA,18)
+output2<-rep(NA,18)
+output3<-rep(NA,18)
+output4<-rep(NA,18)
+for(i in 1:1000){
+  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  output1<-rbind(output1,coef(temp1,standardized = TRUE))
+  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
+  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
+  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
+output1<-output1[-1,]
+output2<-output2[-1,]
+output3<-output3[-1,]
+output4<-output4[-1,]
+
+plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
+                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
+                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
+                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
+plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
+
+colnames(plotdata)<-c('means','low','hi','Treatment','ref')
+plotdata$Treatment<-as.factor(plotdata$Treatment)
+plotdata$ref<-as.factor(plotdata$ref)
+
+fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='Three Errors & Hi Focus'))
+
+
+#####Finally, we overwrite low attention data applying only the low manipulation check
+##threashold of three allowed errors. Coefficient estimates and confidence intervals 
+##are generated in a similar manner, assigned references, and combined into 'fullmanplot' 
+##for a facet wrapped Appendix Figure 5.
+
+data2<-dataclean[which(dataclean$netmanipcheck>0),]
+modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
+
+output1<-rep(NA,18)
+output2<-rep(NA,18)
+output3<-rep(NA,18)
+output4<-rep(NA,18)
+for(i in 1:1000){
+  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
+  output1<-rbind(output1,coef(temp1,standardized = TRUE))
+  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
+  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
+  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
+output1<-output1[-1,]
+output2<-output2[-1,]
+output3<-output3[-1,]
+output4<-output4[-1,]
+
+plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
+                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
+                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
+                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
+plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
+
+colnames(plotdata)<-c('means','low','hi','Treatment','ref')
+plotdata$Treatment<-as.factor(plotdata$Treatment)
+plotdata$ref<-as.factor(plotdata$ref)
+
+fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='Three Errors'))
+
+
+##We plot the results of OLS coefficient estimates and confidence intervals in figure
+##presenting 5 plots
+fullmanplot$Subset<-as.factor(fullmanplot$Subset)
+
+ggplot(fullmanplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
+  facet_wrap(~Subset,nrow = 3)+
+  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
+  geom_errorbar(position = 'dodge2',size = .9,width = 1)+geom_point(position = position_dodge(width = 1),size = 2.2)+
+  scale_x_discrete(labels=c('1'='Treatment','2'='Expert','3'='Gain Frame','4'='Fact Frame',
+                            '5'='Female','6'='Education','7'='Party ID','8'="Don't Know PID"
+                            ,'9'='Ideology','10'='Age','11'='Fox Viewer','12'='NBC Viewer',
+                            '13'='CNN Viewer','14'='ABC Viewer','15'='Facebook News',
+                            '16'='Twitter News','17'='Instagram News'))+
+  labs(y = NULL,x = NULL)+
+  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.27,.27))+
+  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
+  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
+  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
+        plot.caption = element_text(face = "italic",size = 13.5),
+        axis.text.y = element_text(size = 13.5),
+        plot.title = element_text(hjust = .5),
+        strip.text.x = element_text(size = 13, face = NULL),
+        strip.background = element_rect(colour="white", fill="white"),
+        legend.title = element_text(color = "white"))+
+  coord_flip()+
+  geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5,16.5),linetype = 'dotted')+
+  geom_hline(yintercept = 0,linetype = 'dashed')
+ggsave('olsmanipulation.jpeg',width = 7,height = 11)
 
 
 
 
-###########################################################################################
-##################check low time#########################################################
-##########################################################################################
-rm(list=ls())
-library(XML)
-setwd("c:/Users/djl/Documents/summer project")
-library(rio)
-library(data.table)
-library(stringr)
-library(xlsx)
-library(matrixStats)
-library(ggplot2)
-dataclean<-import("data_clean2.xlsx")
-summary(as.factor(dataclean$group))
-summary(as.factor(dataclean$treatment))
-dataclean<-dataclean[-which(is.na(dataclean$treatment1)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment2)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment3)),]
-dataclean<-dataclean[-which(grepl('NA',dataclean$treatment4)),]
-
-dataclean$lowattention[which(dataclean$duplicate==1)]<-1
-summary(as.factor(dataclean$treatment1))
-dataclean$treatment1<-(dataclean$treatment1*(-1))+8
-dataclean$treatment2<-(dataclean$treatment2*(-1))+8
-dataclean$treatment3<-(dataclean$treatment3*(-1))+8
-dataclean$treatment4<-(dataclean$treatment4*(-1))+8
+###################################################################
+#####Appendix Figures 6 and 7 Quick Respondents
 
 
-
-
-#BOOTDATA is our data but as done immediately above, you need to remove the NA's from our
-#treatment columns. 
-#INGROUPS are the treatment groups you want to look at, 1st 4 rows in the returned data
-#are mean and confidence intervals for these groups. Next 4 rows in returned data are
-#mean/CI for all other groups that are not excluded. Last 4 returned rows are the mean/CIs
-#for the difference between in groups and the other, not excluded groups.
-#EXCLUDEDGROUPS are entered the same way as ingroups and are those that will be removed 
-#from the ingroup/outgroup comparison. for example if we want to compare experts versus
-#non experts then we would want to exclude group 9, the control group
-#LISTCONDITIONS are variables and the variable values that we want to look. It requres list type data
-#where the names of the various list(s) are the variables(columns) in our data and the values
-#within the lists are the values want to select on. 
-#so pass in list(column name = "responses you want included", second column name = "responses 
-#for that variable that we are interested in", ect.) <-you can add more than one
-#value in a column by separating with '|'
-#BOOTNUM is the number of bootstrap samples to draw for creating confidence intervals
-
-condinterval<-function(bootdata,ingroups,excludedgroups="zzz",listconditions=NA,bootnum){
-  
-  outcome<-rbind(rep(NA,12),rep(NA,12))
-  bootdata<-bootdata[-which(grepl(paste0(paste0(excludedgroups,sep = "|",collapse = ""),"zzz",collapse = ""),bootdata$group)),]
-  for(i in 1:bootnum){
-    temp<-bootdata[sample(1:nrow(bootdata),nrow(bootdata),replace = TRUE),]
-    if(!is.na(listconditions)){
-      for(j in length(listconditions)){
-        k<-which(colnames(temp)== names(listconditions)[j])
-        temp<-temp[grep(listconditions[j],as.character(temp[,k])),]
-      }
-    }
-    ingrouptemp<-temp[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),temp$group)),22:25]
-    outgrouptemp<-temp[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),temp$group)),22:25]
-    outcome<-rbind(outcome,c(colMeans(data.matrix(ingrouptemp)),colMeans(data.matrix(outgrouptemp)),colMeans(data.matrix(ingrouptemp))-colMeans(data.matrix(outgrouptemp))))
-  }
-  
-  returnvalues<-as.data.frame(cbind(colMeans(na.omit(outcome)),colQuantiles(na.omit(outcome),probs = c(.025,.975))))
-  names(returnvalues)[1]<-"means"
-  return(returnvalues)
-  
-}
-
-
-
-####same thing as condinterval but compares across independent variable groups
-####listdiff and listcompare should be two seperate numeric lists labeled as the name of 
-####the variable of interest. Have not tested with character varaibles (not sure if 
-####the %in% function with recognize characters). 
-
-
-
-
-bygroups<-function(bootdata,ingroups,excludedgroups="zzz",listdiff,listcompare,listconditions=NA,bootnum){
-  
-  outcome<-rbind(rep(NA,12),rep(NA,12))
-  bootdata<-bootdata[-which(grepl(paste0(paste0(excludedgroups,sep = "|",collapse = ""),"zzz",collapse = ""),bootdata$group)),]
-  for(i in 1:bootnum){
-    temp<-bootdata[sample(1:nrow(bootdata),nrow(bootdata),replace = TRUE),]
-    if(!is.na(listconditions)){
-      for(j in length(listconditions)){
-        k<-which(colnames(temp)== names(listconditions)[j])
-        temp<-temp[grep(listconditions[j],as.character(temp[,k])),]
-      }
-    }
-    m<-which(colnames(temp)==names(listdiff))
-    category1<-subset.data.frame(temp,temp[,m] %in% unlist(listdiff))
-    category2<-subset.data.frame(temp,temp[,m] %in% unlist(listcompare))
-    ingtemp1<-category1[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category1$group)),22:25]
-    outgtemp1<-category1[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category1$group)),22:25]
-    ingtemp2<-category2[which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category2$group)),22:25]
-    outgtemp2<-category2[-which(grepl(paste0(paste0(ingroups,sep = "|",collapse = ""),"zzz",collapse = ""),category2$group)),22:25]
-    
-    cat1treat<-(colMeans(data.matrix(ingtemp1))-colMeans(data.matrix(outgtemp1)))
-    cat2treat<-(colMeans(data.matrix(ingtemp2))-colMeans(data.matrix(outgtemp2)))
-    treatdiff<-cat1treat-cat2treat
-    
-    outcome<-rbind(outcome,c(cat1treat,cat2treat,treatdiff))
-  }
-  
-  returnvalues<-as.data.frame(cbind(colMeans(na.omit(outcome)),colQuantiles(na.omit(outcome),probs = c(.025,.975))))
-  names(returnvalues)[1]<-"means"
-  return(returnvalues)
-  
-}
-
+###To check is quick, low attention respondents are driving null results we generate the
+##main results while removing those the quickest respondents at two cutpoints.
+##First we generate the cutpoints at the appropriate percentiles that equate to one half 
+##standard deviation and one full standard deviation below the mean if the data was
+##normally distributed (which it is not).
 cutpoints<-quantile(dataclean$duration_survey,probs = c(.158,.308))
 
-
-
-###########Main Plot#######################################
+##We create difference in means and confidence intervals for the primary treatment conditions
+##of interest. First we use the more strict cutpoint.
 #Expert v non
 mp1half<-condinterval(dataclean[dataclean$duration_survey>cutpoints[2],],c(1,2,3,4),excludedgroups = c(9),bootnum = 1000)
 #Gain v Loss
@@ -803,7 +1649,8 @@ mp2half<-condinterval(dataclean[dataclean$duration_survey>cutpoints[2],],c(1,3,5
 mp3half<-condinterval(dataclean[dataclean$duration_survey>cutpoints[2],],c(1,2,5,6),c(9),bootnum = 1000)
 
 
-
+##We then generate the difference in means and confidence intervals at a lower threashold
+##of quick respondents.
 #Expert v non
 mp1full<-condinterval(dataclean[dataclean$duration_survey>cutpoints[1],],c(1,2,3,4),excludedgroups = c(9),bootnum = 1000)
 #Gain v Loss
@@ -812,7 +1659,7 @@ mp2full<-condinterval(dataclean[dataclean$duration_survey>cutpoints[1],],c(1,3,5
 mp3full<-condinterval(dataclean[dataclean$duration_survey>cutpoints[1],],c(1,2,5,6),c(9),bootnum = 1000)
 
 
-
+#We combine results for plotting with reference columns
 plothalf<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.factor(c(1,2,3,4,1,2,3,4,1,2,3,4)),rbind(rbind(mp1half[9,],NA,NA,mp1half[12,]),mp2half[9:12,],mp3half[9:12,]),Cutoff = "Half")
 names(plothalf)[c(4,5)]<-c('low','hi')
 
@@ -820,7 +1667,8 @@ plotfull<-cbind(ref = as.factor(c(1,1,1,1,2,2,2,2,3,3,3,3)),Treatment = as.facto
 names(plotfull)[c(4,5)]<-c('low','hi')
 
 
-
+###We created 2 plots one for the full standard deviation cut point and one for the half
+##standard deviation cutpoint.
 ggplot(plotfull, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
   geom_errorbar(position = 'dodge2',size = 1)+geom_point(position = position_dodge(width = .9),size = 3)+
   scale_x_discrete(labels=c('1'='Expert v Non-Expert','2'='Gain v Loss','3'='Fact v Experience'))+
@@ -856,354 +1704,28 @@ ggsave('durationtest2.jpeg',width = 7,height = 7)
 
 
 
-
-
-
-
-
-
-
-
-
-
-#############################################################################
-#############################################################################
-##############BREAK################################BREAK#####################
-########BELOW IS THE CODE PROVIDED BY RAHUL AND THEN OLS GRAPHS BUILT OFF THAT####
-
-
-
-rm(list=ls())
-library(readr)
-library(stringr)
-library(tidyverse)
-library(reshape2)
-library(jtools)
-library(broom.mixed)
-library(lattice)
-library(gtools)
-library(rio)
-library(ggstance)
-library(car)
-library(matrixStats)
-library(lm.beta)
-library(stargazer)
-setwd("c:/Users/djl/Documents/summer project")
-data<-import("data_clean2.xlsx")
-data$lowattention[which(data$duplicate==1)]<-1
-
-sum(nrow(data[which(data$lowattention==0&data$netmanipcheck==4),]))
-
-
-#Coding different Groups in the Data
-data$control <- ifelse(data$group==9,1,0)
-data$pid <- as.numeric(data$pid)
-data$pid_scale <- ifelse(data$pid<4,data$pid, ifelse(data$pid==9,NA,data$pid-1))
-data$republican <- ifelse(data$pid>5 & data$pid<9,1,0)
-data$group <- as.numeric(data$group)
-data$expertise <- ifelse(data$group<5,1,ifelse(data$group==9,0,0))
-data$fact <- ifelse(data$group<3 | data$group==5 | data$group==6,1,ifelse(data$group==9,0,0))
-data$gain <- ifelse(data$group==2 | data$group==4| data$group==6 | data$group==8,1,ifelse(data$group==9,0,0))
-data$treatment <- ifelse(data$group==9,0,1)
-data$birth_year <- as.numeric(data$birth_year)
-data$ideology <- as.numeric(data$ideology)
-data$treatment1<-as.numeric(data$treatment1)
-data$treatment2<-as.numeric(data$treatment2)
-data$treatment3<-as.numeric(data$treatment3)
-data$treatment4<-as.numeric(data$treatment4)
-data$treatment1<-(data$treatment1*(-1))+8
-data$treatment2<-(data$treatment2*(-1))+8
-data$treatment3<-(data$treatment3*(-1))+8
-data$treatment4<-(data$treatment4*(-1))+8
-data$treatment<-as.numeric(data$treatment)
-data$pidDK<-ifelse(is.na(data$pid_scale),1,0)
-data$pid_scale<-ifelse(is.na(data$pid_scale),0,data$pid_scale-4)
-#Assigning Ethnicity
-data$ethnicity <- as.numeric(data$ethnicity)
-data$ethnicity <- ifelse(data$ethnicity>7,7,data$ethnicity)
-data$age<--(data$birth_year-2020)
-
-summary(as.factor(data$pid_scale))
-#Filtering low-attension out of the data
-#data <- data[which(data$lowattention==0),]
-
-
-#Summary Plot for Treatment Averages
-data2 <- data %>% select(group,treatment1, treatment2,treatment3,treatment4)
-data3 <- melt(data = data2, id.vars = "group", na.rm= T)
-data3$group <- as.factor(data3$group)
-means <- aggregate(value ~  group + variable, data3, mean)
-sds <- aggregate(value ~  group + variable, data3, sd)
-levels(data3$variable)<-c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots')
-levels(means$variable)<-c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots')
-levels(sds$variable)<-c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots')
-
-
-
-
-ggplot(data=data3,aes(x = group, y=value, fill=group)) + geom_boxplot(alpha=0.3) +
-  scale_fill_brewer(palette="Blues")+ facet_wrap(~variable)  +
-  scale_y_discrete(limits=c(1:7),labels = c('7'='Strongly Agree','6'='Agree','5'='Somewhat Agree',
-                                            '4'='Neither','3'='Somewhat Disagree','2'='Disagree',
-                                            '1'='Strongly Disagree')) +
-  stat_summary(fun=mean, colour="black", geom="point",shape=18, size=0.1) +  
-  theme_test()+
-  labs(y = NULL,
-       x = NULL)+
-  theme(plot.title = element_text(hjust = .5),
-        strip.background = element_rect(colour="white", fill="white"),
-        strip.text.x = element_text(size = 13.5),
-        legend.position = "none",
-        axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
-        legend.title = element_text(color = "white"))
-ggsave("meanresponse.jpeg",width = 7, height = 7)
-
-#Summary Plot for Ideology Scale Averages
-data2 <- data %>% select(ideology,treatment1, treatment2,treatment3,treatment4)
-data3 <- melt(data = data2, id.vars = "ideology", na.rm= T)
-data3$ideology <- as.factor(data3$ideology)
-means <- aggregate(value ~  ideology + variable, data3, mean)
-sds <- aggregate(value ~  ideology + variable, data3, sd)
-ggplot(data=data3,aes(x = ideology, y=value, fill=ideology)) + geom_boxplot(alpha=0.3) + theme(legend.position="none") +
-  scale_fill_brewer(palette="PuRd")+ facet_wrap(~variable)  +scale_y_discrete(limits=c(1:7)) +
-  stat_summary(fun=mean, colour="black", geom="point",shape=18, size=0.1) +  
-  geom_text(data = means, aes(label = round(value,2), y = value + 0.5), size=2, colour = "dark red")
-
-#Summary Plot for Party Scale Averages
-data2 <- data %>% select(pid_scale,treatment1, treatment2,treatment3,treatment4)
-data3 <- melt(data = data2, id.vars = "pid_scale", na.rm= T)
-data3$pid_scale <- as.factor(data3$pid_scale)
-means <- aggregate(value ~  pid_scale + variable, data3, mean)
-sds <- aggregate(value ~  pid_scale + variable, data3, sd)
-ggplot(data=data3,aes(x = pid_scale, y=value, fill=pid_scale)) + geom_boxplot(alpha=0.3) + theme(legend.position="none") +
-  scale_fill_brewer(palette="PuRd")+ facet_wrap(~variable)  +scale_y_discrete(limits=c(1:7)) +
-  stat_summary(fun=mean, colour="black", geom="point",shape=18, size=0.1) +  
-  geom_text(data = means, aes(label = round(value,2), y = value + 0.5), size=2, colour = "dark red")
-
-#Summary Plot for Media
-data2 <- data %>% select(fox,abc,fb,insta,twitter,nbc,cnn,nyt,treatment1, treatment2,treatment3,treatment4)
-data3 <- melt(data = data2, id.vars = c("treatment1", "treatment2","treatment3","treatment4"), na.rm= T)
-data3<-filter(data3,value==1)
-data3<-data3[,-6]
-data3 <- melt(data = data3, id.vars = "variable", na.rm= T)
-colnames(data3) <- c("media","treatment","value")
-means <- aggregate(value ~  media + treatment, data3, mean)
-ggplot(data=data3,aes(x = media, y=value, fill=media)) + geom_boxplot(alpha=0.3) + theme(legend.position="none") +
-  scale_fill_brewer(palette="RdYlBu")+ facet_wrap(~treatment)  +scale_y_discrete(limits=c(1:7)) +
-  stat_summary(fun=mean, colour="black", geom="point",shape=18, size=0.1) +  
-  geom_text(data = means, aes(label = round(value,2), y = value + 0.5), size=2, colour = "dark red")
-
-#Power Anlysis for T-Test
-power.t.test(n=502,sig.level=0.05,power=0.9)
-#Delta of 0.067 which means we can detect a small effect size
-
-#T-test comparing controls with others
-t.test(data$treatment1  ~  data$control)
-t.test(data$treatment2  ~  data$control)
-t.test(data$treatment3  ~  data$control)
-t.test(data$treatment4  ~  data$control)
-
-#Summary plots for all treatments for republications and non-republicans
-data2 <- data[which(data$republican==1),]
-data2 <- data2 %>% group_by(group) %>% summarise(t1=mean(treatment1,na.rm=T),t2=mean(treatment2,na.rm=T), t3=mean(treatment3,na.rm=T), t4=mean(treatment4,na.rm=T))
-data3 <- melt(data = data2, id.vars = "group")
-ggplot(data=data3,aes(x = group, y=value)) + geom_bar(stat = "identity", fill = "maroon") + facet_wrap(~variable) + scale_x_discrete(limits=c(1:9))
-
-data2 <- data[which(data$republican==0),]
-data2 <- data2 %>% group_by(group) %>% summarise(t1=mean(treatment1,na.rm=T),t2=mean(treatment2,na.rm=T), t3=mean(treatment3,na.rm=T), t4=mean(treatment4,na.rm=T))
-data3 <- melt(data = data2, id.vars = "group")
-ggplot(data=data3,aes(x = group, y=value)) + geom_bar(stat = "identity", fill = "navy blue") + facet_wrap(~variable) + scale_x_discrete(limits=c(1:9))
-
-ggplot(data=data2,aes(x = group, y=t1)) + geom_bar(stat = "identity")
-ggplot(data=data2,aes(x = group, y=t2)) + geom_bar(stat = "identity")
-ggplot(data=data2,aes(x = group, y=t3)) + geom_bar(stat = "identity")
-ggplot(data=data2,aes(x = group, y=t4)) + geom_bar(stat = "identity")
-
-#ANOVA for Republicans
-data2 <- data[which(data$republican==1),]
-summary(aov(data2$treatment1~data2$group))
-summary(aov(data2$treatment2~data2$group))
-summary(aov(data2$treatment3~data2$group))
-summary(aov(data2$treatment4~data2$group))
-
-#T-test for difference between republicans and non-republicans
-t.test(data$treatment1 ~ data$republican)
-t.test(data$treatment2 ~ data$republican)
-t.test(data$treatment3 ~ data$republican)
-t.test(data$treatment4 ~ data$republican)
-
-
-#T-tests for Expertise, Fact and Gain-based statements for all treatments
-t.test(data$treatment1 ~ data$expertise)
-t.test(data$treatment2 ~ data$expertise)
-t.test(data$treatment3 ~ data$expertise)
-t.test(data$treatment4 ~ data$expertise)
-
-t.test(data$treatment1 ~ data$fact)
-t.test(data$treatment2 ~ data$fact)
-t.test(data$treatment3 ~ data$fact)
-t.test(data$treatment4 ~ data$fact)
-
-t.test(data$treatment1 ~ data$gain)
-t.test(data$treatment2 ~ data$gain)
-t.test(data$treatment3 ~ data$gain)
-t.test(data$treatment4 ~ data$gain)
-
-t.test(data$treatment1 ~ data$fox)
-t.test(data$treatment2 ~ data$fox)
-t.test(data$treatment3 ~ data$fox)
-t.test(data$treatment4 ~ data$fox)
-
-#T-test for Expertise given fact
-t.test(data[which(data$fact==1),]$treatment1 ~ data[which(data$fact==1),]$expertise)
-t.test(data[which(data$fact==1),]$treatment2 ~ data[which(data$fact==1),]$expertise)
-t.test(data[which(data$fact==1),]$treatment3 ~ data[which(data$fact==1),]$expertise)
-t.test(data[which(data$fact==1),]$treatment4 ~ data[which(data$fact==1),]$expertise)
-
-#T-test given Independance
-data$independance <- ifelse(data$pid==5,1,0)
-data4 <- data[which(data$independance>0),]
-
-data$independance_levels <- ifelse(data$pid==1|data$pid==8, 3,ifelse(data$pid==2|data$pid==7,2,ifelse(data$pid==3|data$pid==6,1,0)))
-
-t.test(data4$treatment1 ~ data4$control)
-t.test(data4$treatment2 ~ data4$control)
-t.test(data4$treatment3 ~ data4$control)
-t.test(data4$treatment4 ~ data4$control)
-
-data$fox<-as.numeric(data$fox)
-data$nbc<-as.numeric(data$nbc)
-
-data$Female<-ifelse(data$gender==2,1,0)
-
-
-#Regressions for Treatment1
-model1a <- lm(treatment1 ~ expertise, data)
-summary(model1a)
-model1b <- lm(treatment1 ~ expertise + gain, data)
-summary(model1b)
-model1c <- lm(treatment1 ~ expertise + gain + fact, data)
-summary(model1c)
-model1d <- lm(treatment1 ~ expertise + gain + fact + pid_scale, data)
-summary(model1d)
-model1e <- lm(treatment1 ~ expertise + gain + fact + pid_scale + expertise*pid_scale, data)
-summary(model1e)
-model1f <- lm(treatment1 ~ expertise + gain + fact + pid_scale + birth_year, data)
-summary(model1f)
-model1g <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data))
-summary(model1g)
-
-
-
-#Regressions for Treatment2
-model2a <- lm(treatment2 ~ expertise, data)
-summary(model2a)
-model2b <- lm(treatment2 ~ expertise + gain, data)
-summary(model2b)
-model2c <- lm(treatment2 ~ expertise + gain + fact, data)
-summary(model2c)
-model2d <- lm(treatment2 ~ expertise + gain + fact + pid_scale, data)
-summary(model2d)
-model2e <- lm(treatment2 ~ expertise + gain + fact + pid_scale + expertise*pid_scale, data)
-summary(model2e)
-model2f <- lm(treatment2 ~ expertise + gain + fact + pid_scale + birth_year, data)
-summary(model2f)
-model2g <- lm.beta(lm(treatment2 ~ treatment  + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data))
-summary(model2g)
-
-
-#Regressions for Treatment3
-model3a <- lm(treatment3 ~ expertise, data)
-summary(model3a)
-model3b <- lm(treatment3 ~ expertise + gain, data)
-summary(model3b)
-model3c <- lm(treatment3 ~ expertise + gain + fact, data)
-summary(model3c)
-model3d <- lm(treatment3 ~ expertise + gain + fact + pid_scale, data)
-summary(model3d)
-model3e <- lm(treatment3 ~ expertise + gain + fact + pid_scale + expertise*pid_scale, data)
-summary(model3e)
-model3f <- lm(treatment3 ~ expertise + gain + fact + pid_scale + birth_year, data)
-summary(model3f)
-model3g <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data))
-summary(model3g)
-
-
-#Regressions for Treatment4
-model4a <- lm(treatment4 ~ expertise, data)
-summary(model4a)
-model4b <- lm(treatment4 ~ expertise + gain, data)
-summary(model4b)
-model4c <- lm(treatment4 ~ expertise + gain + fact, data)
-summary(model4c)
-model4d <- lm(treatment4 ~ expertise + gain + fact + pid_scale, data)
-summary(model4d)
-model4e <- lm(treatment4 ~ expertise + gain + fact + pid_scale + expertise*pid_scale, data)
-summary(model4e)
-model4f <- lm(treatment4 ~ expertise + gain + fact + pid_scale + birth_year, data)
-summary(model4f)
-model4g <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data))
-summary(model4g)
-
-#Regression using Trust Variables
-data$age<--(data$birth_year-2020)
-
-
-
-total<-nrow(data)
-######
-nrow(data[data$lowattention==0,])
-nrow(data[data$lowattention==0,])/total
-nrow(data[which(data$lowattention==0&data$netmanipcheck==4),])
-nrow(data[which(data$lowattention==0&data$netmanipcheck==4),])/total
-nrow(data[which(data$lowattention==0&data$netmanipcheck>2),])
-nrow(data[which(data$lowattention==0&data$netmanipcheck>2),])/total
-nrow(data[which(data$lowattention==0&data$netmanipcheck>1),])
-nrow(data[which(data$lowattention==0&data$netmanipcheck>1),])/total
-nrow(data[which(data$lowattention==0&data$netmanipcheck>0),])
-nrow(data[which(data$lowattention==0&data$netmanipcheck>0),])/total
-
-
-
-nrow(data[which(data$netmanipcheck==4),])
-nrow(data[which(data$netmanipcheck==4),])/total
-nrow(data[which(data$netmanipcheck>2),])
-nrow(data[which(data$netmanipcheck>2),])/total
-nrow(data[which(data$netmanipcheck>1),])
-nrow(data[which(data$netmanipcheck>1),])/total
-nrow(data[which(data$netmanipcheck>0),])
-nrow(data[which(data$netmanipcheck>0),])/total
-
-
-########################################
-######bayes factor########################
-##########################################
-
-
-
-library(BayesFactor)
-library(tidyBF)
-
-###anova test
-###fully unconstrained - vs intercept
-###fact v experience
-###expert v non
-###gain v loss
-
-
-
-bfdata<-na.omit(data[,c(22:25,42,44,43,40,46,9,47,10,11,45)])
-bfdata2<-na.omit(data[,c(21:25)])
+#####################################################################
+#####Appendix Figures 12 - 15
+#####We removed extra columns and create data objects for each respective treatment to pass
+#####into the regressionBF function.
 bfd1<-bfdata[,-c(2:4)]
 bfd2<-bfdata[,-c(1,3,4)]
 bfd3<-bfdata[,-c(1,2,4)]
 bfd4<-bfdata[,-c(1:3)]
 varlabels<-c('Treatment','NBC','FOX','Age','Ideology',"Don't Know Party","Party ID","Fact","Gain",'Expert')
+
+###Created vector of different priors and associated labels (not all were used, some came
+###from default values in R functions that we could not source in the Bayes Factor 
+###literature)
 prior<-c(sqrt(2)/8,sqrt(2)/4,1/2,sqrt(2)/2,sqrt(2))
 priorlab<-c('Half Medium','Medium','Wide','Ultrawide','Double Ultrawide')
 
+
+####We run a Bayes Factor comparison between the full model and each individual variable
+####omitted respectively of the variables NBC, FOX, Age, Ideology, Don't Know Party, 
+####Party ID, Fact, Gain, and Expert. We start with the first prior, label approriate 
+####columns, and then below attach additional columns representing each of the priors 
+####from the above vector.
 bf1<-regressionBF(treatment1 ~ ., data = bfd1,whichModels = 'top',rscaleCont = prior[1])
 bf2<-regressionBF(treatment2 ~ ., data = bfd2,whichModels = 'top',rscaleCont = prior[1])
 bf3<-regressionBF(treatment3 ~ ., data = bfd3,whichModels = 'top',rscaleCont = prior[1])
@@ -1242,16 +1764,17 @@ olsbfgraph$defhi<-rowMaxs(as.matrix(olsbfgraph[,c(4,5,6)],na.rm = TRUE))
 olsbfgraph$deflow<-rowMins(as.matrix(olsbfgraph[,c(4,5,6)],na.rm = TRUE))
 
 
+####For graphing purposes we take the natural log of all values for visual purposes.
+####When we graph the figures we take the reverse log of x-axis values to create the tick
+####mark labels. 
 lnbfgraph<-olsbfgraph
 lnbfgraph[,c(1,4:11)]<-cbind(log(olsbfgraph[,1]),log(olsbfgraph[,4]),log(olsbfgraph[,5]),
                              log(olsbfgraph[,6]),log(olsbfgraph[,7]),log(olsbfgraph[,8]),
                              log(olsbfgraph[,9]),log(olsbfgraph[,10]),log(olsbfgraph[,11]))
 
-#reverse log
 
 
-
-#################self quarantine###############################################
+####Plot self-quarentine BF graph
 ggplot(data = lnbfgraph[lnbfgraph$Treatment%in%'Self-Quarantine',], aes(x = varlabels,y=Medium,ymin=low,ymax=defhi))+
   geom_errorbar()+geom_point(size = 2.5)+
   #  geom_point(data = lnbfgraph[lnbfgraph$Treatment%in%'Self-Quarantine',], 
@@ -1275,7 +1798,7 @@ ggsave('treat1bfreg.jpeg', width = 7, height = 7)
 
 
 
-######################detainee release###################################
+######Plot detainee release BF graph
 ggplot(data = lnbfgraph[lnbfgraph$Treatment%in%'Release Detainees',], aes(x = varlabels,y=Medium,ymin=low,ymax=defhi))+
   geom_errorbar()+geom_point(size = 2)+
   #  geom_point(data = lnbfgraph[lnbfgraph$Treatment%in%'Release Detainees',], 
@@ -1300,7 +1823,7 @@ ggsave('treat2bfreg.jpeg', width = 7, height = 7)
 
 
 
-#####################NCAA FOOTBALL#############################################
+#####Plot NCAA FOOTBALL BF graph
 ggplot(data = lnbfgraph[lnbfgraph$Treatment%in%'NCAA Football',], aes(x = varlabels,y=Medium,ymin=low,ymax=defhi))+
   geom_errorbar()+geom_point(size = 2.5)+
   #  geom_point(data = lnbfgraph[lnbfgraph$Treatment%in%'NCAA Football',], 
@@ -1322,13 +1845,7 @@ ggplot(data = lnbfgraph[lnbfgraph$Treatment%in%'NCAA Football',], aes(x = varlab
 ggsave('treat3bfreg.jpeg', width = 7, height = 7)
 
 
-1/exp(-25)
-exp(c(-25,-11,-7,-3,-1.5,0,2.))
-
-1/exp(-24.5)
-log(50000)
-
-####################IN PERSON BALLOT##################################################
+#####Plot in-person ballot BF graph
 ggplot(data = lnbfgraph[lnbfgraph$Treatment%in%'In-Person Ballots',], aes(x = varlabels,y=Medium,ymin=low,ymax=defhi))+
   geom_errorbar()+geom_point(size = 2.5)+
   #  geom_point(data = lnbfgraph[lnbfgraph$Treatment%in%'In-Person Ballots',], 
@@ -1348,763 +1865,3 @@ ggplot(data = lnbfgraph[lnbfgraph$Treatment%in%'In-Person Ballots',], aes(x = va
   coord_flip()+
   geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5),linetype = 'dotted')
 ggsave('treat4bfreg.jpeg', width = 7, height = 7)
-
-
-
-summary(as.factor(dataclean$treatment2))[1]/nrow(dataclean)
-
-
-
-
-
-
-
-
-###remove control when inputing data, did not include remove condition parameter
-bfgraph<-function(databf,columndv,columnvar){
-  tref<-which(names(databf)==columndv)
-  vref<-which(names(databf)==columnvar)
-  formulabf<-as.formula(paste0(columndv,'~',columnvar))
-  output<-c(NA,NA)
-  for(i in seq(from =.01,to=2, by=.01)){
-    output<-rbind(output,cbind(extractBF(ttestBF(x=subset(databf[,tref],databf[,vref]==1),y=subset(databf[,tref],databf[,vref]==0),rscale = i)),i))
-  }
-  return(output[-1,])
-}
-
-?rbind
-summary(ttestBF(x = bfdata[bfdata$expertise==1,1],y = bfdata[bfdata$expertise==0,1],rscale = 1))
-expertgraph<-bind_rows(cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment1',columnvar = 'expertise'),
-                             Treatment = "Self-Quarantine"),
-                       cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment2',
-                                     columnvar = 'expertise'),Treatment = 'Release Detainees'),
-                       cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment3',columnvar = 'expertise'),
-                             Treatment = "NCAA Football"),
-                       cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment4',columnvar = 'expertise'),
-                             Treatment = "In-Person Ballots"))
-expertgraph$Treatment<-factor(expertgraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
-expertgraph$test<-factor('Expert')
-
-
-factgraph<-bind_rows(cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment1',columnvar = 'fact'),
-                           Treatment = "Self-Quarantine"),
-                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment2',columnvar = 'fact'),
-                           Treatment = 'Release Detainees'),
-                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment3',columnvar = 'fact'),
-                           Treatment = "NCAA Football"),
-                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment4',columnvar = 'fact'),
-                           Treatment = "In-Person Ballots"))
-factgraph$Treatment<-factor(factgraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
-factgraph$test<-factor('Fact')
-
-
-
-gaingraph<-bind_rows(cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment1',columnvar = 'gain'),
-                           Treatment = "Self-Quarantine"),
-                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment2',columnvar = 'gain'),
-                           Treatment = 'Release Detainees'),
-                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment3',columnvar = 'gain'),
-                           Treatment = "NCAA Football"),
-                     cbind(bfgraph(bfdata[bfdata$treatment==1,],columndv = 'treatment4',columnvar = 'gain'),
-                           Treatment = "In-Person Ballots"))
-gaingraph$Treatment<-factor(gaingraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
-gaingraph$test<-factor('Gain')
-
-tcgraph<-bind_rows(cbind(bfgraph(bfdata,columndv = 'treatment1',columnvar = 'treatment'),
-                         Treatment = "Self-Quarantine"),
-                   cbind(bfgraph(bfdata,columndv = 'treatment2',columnvar = 'treatment'),
-                         Treatment = 'Release Detainees'),
-                   cbind(bfgraph(bfdata,columndv = 'treatment3',columnvar = 'treatment'),
-                         Treatment = "NCAA Football"),
-                   cbind(bfgraph(bfdata,columndv = 'treatment4',columnvar = 'treatment'),
-                         Treatment = "In-Person Ballots"))
-tcgraph$Treatment<-factor(tcgraph$Treatment,levels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))
-tcgraph$test<-factor('Treat/Control')
-
-fullgraph<-rbind(expertgraph,factgraph,gaingraph,tcgraph)
-
-#?subset
-#?ttest.tstat
-#set prior to .5, this indicates that outcomes will be more likely to be closer to zero,
-#or we can set a range of priors?
-
-#jzs prior for bayes t test, assumes little prior knowledge
-
-###add point for standard cauchy prior (r in the cauchy prior distribution)
-###THIS IS A BF10 two sided test-the first number indicates numberator and second
-### indicates the denominator, so here the null is on the bottom which is why
-###we have a low number
-hline<-data.frame(texts=c('1/3','1/10','1/20','1/30'),num=c(1/3,1/10,1/20,0.005))
-
-
-cauchydefault<-fullgraph[fullgraph$i==1,c(-3,-4)]
-cauchydefault$inverse<-1/cauchydefault$bf
-
-?regressionBF
-
-###########Self Quarantine######################################################
-ggplot(fullgraph[fullgraph$Treatment%in%'Self-Quarantine',], aes(x = i,y=bf,shape = test,color=test))+
-  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'Self-Quarantine'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
-  #facet_wrap(~facet,nrow = 1)+
-  labs(y = NULL,x = NULL)+
-  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        axis.title= element_text(size=18,face = 'bold'),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13),
-        legend.title = element_text(color = "white"),
-        strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"))+
-  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
-  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
-ggsave('bfttest1.jpeg', width = 7, height = 7)
-
-
-#######Release Detainees#############################################################
-ggplot(fullgraph[fullgraph$Treatment%in%'Release Detainees',], aes(x = i,y=bf,shape = test,color=test))+
-  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'Release Detainees'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
-  #facet_wrap(~facet,nrow = 1)+
-  labs(y = NULL,x = NULL)+
-  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.title = element_text(size=18,face = 'bold'),
-        axis.text.y = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13),
-        legend.title = element_text(color = "white"),
-        strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"))+
-  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
-  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
-ggsave('bfttest2.jpeg', width = 7, height = 7)
-
-
-
-#####################################NCAA Football######################################
-ggplot(fullgraph[fullgraph$Treatment%in%'NCAA Football',], aes(x = i,y=bf,shape = test,color=test))+
-  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'NCAA Football'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
-  #facet_wrap(~facet,nrow = 1)+
-  labs(y = NULL,x = NULL)+
-  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.title= element_text(size=18,face = 'bold'),
-        axis.text.y = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13),
-        legend.title = element_text(color = "white"),
-        strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"))+
-  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
-  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
-ggsave('bfttest3.jpeg', width = 7, height = 7)
-
-
-
-####################################In-Person Ballots#################################
-ggplot(fullgraph[fullgraph$Treatment%in%'In-Person Ballots',], aes(x = i,y=bf,shape = test,color=test))+
-  geom_line()+geom_point(data = fullgraph[which(fullgraph$Treatment%in%'In-Person Ballots'&fullgraph$i==1),],aes(x = 1,y=bf),size =3)+
-  #facet_wrap(~facet,nrow = 1)+
-  labs(y = NULL,x = NULL)+
-  theme_test()+#geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Expert v Non','Fact v Experience','Gain v Loss','Treat v Control'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.title= element_text(size=18,face = 'bold'),
-        axis.text.y = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13),
-        legend.title = element_text(color = "white"),
-        strip.background = element_rect(colour="white", fill="white"),
-        panel.spacing.x = unit(5.5, "mm"))+
-  geom_hline(yintercept = c(1/3,1/10,1/20,1/30),linetype = 'dashed')+
-  annotate(geom='text',x = c(rep(1.9,2),rep(.1,2)), y = hline$num+.015, label = hline$texts)
-ggsave('bfttest4.jpeg', width = 7, height = 7)
-
-
-
-
-
-
-#######When we remove variables representing the treatment conditions, our data becomes more likely
-#######to occur under our model than the null hypothesis assuming BIC as our prior.
-
-
-
-
-#treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta
-
-#########################adding standard ggplot for coefficients
-output1<-rep(NA,18)
-output2<-rep(NA,18)
-output3<-rep(NA,18)
-output4<-rep(NA,18)
-for(i in 1:1000){
-  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data[sample(1:nrow(data),nrow(data),replace = TRUE),]))
-  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data[sample(1:nrow(data),nrow(data),replace = TRUE),]))
-  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data[sample(1:nrow(data),nrow(data),replace = TRUE),]))
-  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data[sample(1:nrow(data),nrow(data),replace = TRUE),]))
-  output1<-rbind(output1,coef(temp1,standardized = TRUE))
-  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
-  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
-  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
-
-output1<-output1[-1,]
-output2<-output2[-1,]
-output3<-output3[-1,]
-output4<-output4[-1,]
-
-plotdata<-rbind(cbind(coef(model1g,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
-                cbind(c(coef(model2g,standardized=TRUE)[c(1,2)],NA,coef(model2g,standardized=TRUE)[c(3:17)]),colQuantiles(output2,probs = c(.025,.975)),2)[-1,],
-                cbind(c(coef(model3g,standardized=TRUE)[c(1,2)],NA,coef(model3g,standardized=TRUE)[c(3:17)]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
-                cbind(coef(model4g,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),4)[-1,])
-plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
-
-colnames(plotdata)<-c('means','low','hi','Treatment','ref')
-plotdata$Treatment<-as.factor(plotdata$Treatment)
-plotdata$ref<-as.factor(plotdata$ref)
-
-#treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + 
-#ideology + age + fox + nbc + cnn + abc + fb + twitter + insta
-ggplot(plotdata, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  geom_errorbar(position = 'dodge2',size = .9,width = 1)+geom_point(position = position_dodge(width = 1),size = 2.2)+
-  scale_x_discrete(labels=c('1'='Treatment','2'='Expert','3'='Gain Frame','4'='Fact Frame',
-                            '5'='Female','6'='Education','7'='Party ID','8'="Don't Know PID"
-                            ,'9'='Ideology','10'='Age','11'='Fox Viewer','12'='NBC Viewer',
-                            '13'='CNN Viewer','14'='ABC Viewer','15'='Facebook News',
-                            '16'='Twitter News','17'='Instagram News'))+
-  labs(y = NULL,x = NULL)+
-  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.26,.26))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
-        strip.text.x = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.background = element_rect(colour="white", fill="white"),
-        legend.title = element_text(color = "white"))+
-  coord_flip()+
-  geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5,16.5),linetype = 'dotted')+
-  geom_hline(yintercept = 0,linetype = 'dashed')
-ggsave('ols.jpeg',width = 7,height = 7)
-
-
-##########################################################################################
-#create ols table to accompany graph in appendix
-##########################################################################################
-
-#####these are the models
-#model1g,model2g,model3g,model4g
-
-stargazer(model1g,model2g,model3g,model4g, type = "html", no.space=TRUE, 
-          star.cutoffs=c(.05,.01,.001), out = "olstable.doc")
-
-
-summary(model1g)
-summary(model2g)
-summary(model3g)
-summary(model4g)
-
-summary(as.factor(data$ideology))
-
-
-
-################check ols with low attention removed###################################
-data2<-data[which(data$lowattention==0),]
-
-modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-
-output1<-rep(NA,18)
-output2<-rep(NA,18)
-output3<-rep(NA,18)
-output4<-rep(NA,18)
-for(i in 1:1000){
-  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  output1<-rbind(output1,coef(temp1,standardized = TRUE))
-  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
-  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
-  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
-output1<-output1[-1,]
-output2<-output2[-1,]
-output3<-output3[-1,]
-output4<-output4[-1,]
-
-plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
-                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
-                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
-                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
-plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
-
-colnames(plotdata)<-c('means','low','hi','Treatment','ref')
-plotdata$Treatment<-as.factor(plotdata$Treatment)
-plotdata$ref<-as.factor(plotdata$ref)
-fullmanplot<-cbind(plotdata,'Subset'='Hi Focus')
-
-
-
-##########################lowattention and highest manipulation check
-
-data2<-data[which(data$lowattention==0&data$netmanipcheck==4),]
-
-
-
-
-
-
-####compare distribution across groups within original data and with low attention removed
-summary(as.factor(data$group))
-summary(as.factor(data2$group))
-
-
-modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-
-output1<-rep(NA,18)
-output2<-rep(NA,18)
-output3<-rep(NA,18)
-output4<-rep(NA,18)
-for(i in 1:1000){
-  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  output1<-rbind(output1,coef(temp1,standardized = TRUE))
-  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
-  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
-  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
-output1<-output1[-1,]
-output2<-output2[-1,]
-output3<-output3[-1,]
-output4<-output4[-1,]
-
-plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
-                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
-                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
-                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
-plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
-
-colnames(plotdata)<-c('means','low','hi','Treatment','ref')
-plotdata$Treatment<-as.factor(plotdata$Treatment)
-plotdata$ref<-as.factor(plotdata$ref)
-
-fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='No Errors & Hi Focus'))
-
-ggplot(plotdata, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  geom_errorbar(position = 'dodge2',size = .9,width = 1)+geom_point(position = position_dodge(width = 1),size = 2.2)+
-  scale_x_discrete(labels=c('1'='Treatment','2'='Expert','3'='Gain Frame','4'='Fact Frame',
-                            '5'='Female','6'='Education','7'='Party ID','8'="Don't Know PID"
-                            ,'9'='Ideology','10'='Age','11'='Fox Viewer','12'='NBC Viewer',
-                            '13'='CNN Viewer','14'='ABC Viewer','15'='Facebook News',
-                            '16'='Twitter News','17'='Instagram News'))+
-  labs(y = NULL,x = NULL)+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(legend.title = element_text(color = "white"))+
-  coord_flip()+
-  geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5,16.5),linetype = 'dotted')+
-  geom_hline(yintercept = 0,linetype = 'dashed')
-
-
-#################################################remove only manipulation checks##############
-
-data2<-data[which(data$netmanipcheck==4),]
-
-
-
-
-modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-
-output1<-rep(NA,18)
-output2<-rep(NA,18)
-output3<-rep(NA,18)
-output4<-rep(NA,18)
-for(i in 1:1000){
-  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  output1<-rbind(output1,coef(temp1,standardized = TRUE))
-  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
-  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
-  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
-output1<-output1[-1,]
-output2<-output2[-1,]
-output3<-output3[-1,]
-output4<-output4[-1,]
-
-plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
-                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
-                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
-                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
-plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
-
-colnames(plotdata)<-c('means','low','hi','Treatment','ref')
-plotdata$Treatment<-as.factor(plotdata$Treatment)
-plotdata$ref<-as.factor(plotdata$ref)
-
-fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='No Errors'))
-
-
-
-data2<-data[which(data$netmanipcheck>0&data$lowattention==0),]
-
-
-
-
-modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-
-output1<-rep(NA,18)
-output2<-rep(NA,18)
-output3<-rep(NA,18)
-output4<-rep(NA,18)
-for(i in 1:1000){
-  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  output1<-rbind(output1,coef(temp1,standardized = TRUE))
-  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
-  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
-  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
-output1<-output1[-1,]
-output2<-output2[-1,]
-output3<-output3[-1,]
-output4<-output4[-1,]
-
-plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
-                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
-                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
-                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
-plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
-
-colnames(plotdata)<-c('means','low','hi','Treatment','ref')
-plotdata$Treatment<-as.factor(plotdata$Treatment)
-plotdata$ref<-as.factor(plotdata$ref)
-
-fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='Three Errors & Hi Focus'))
-
-
-
-data2<-data[which(data$netmanipcheck>0),]
-
-
-
-
-modellow1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow2<- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow3<- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-modellow4<- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2))
-
-output1<-rep(NA,17)
-output2<-rep(NA,17)
-output3<-rep(NA,17)
-output4<-rep(NA,17)
-for(i in 1:1000){
-  temp4 <- lm.beta(lm(treatment4 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp3 <- lm.beta(lm(treatment3 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp2 <- lm.beta(lm(treatment2 ~ treatment + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  temp1 <- lm.beta(lm(treatment1 ~ treatment + expertise + gain + fact + Female + education + pid_scale + pidDK + ideology + age + fox + nbc + cnn + abc + fb + twitter + insta, data2[sample(1:nrow(data2),nrow(data2),replace = TRUE),]))
-  output1<-rbind(output1,coef(temp1,standardized = TRUE))
-  output2<-rbind(output2,c(coef(temp2,standardized = TRUE)[c(1,2)],NA,coef(temp2,standardized = TRUE)[3:17]))
-  output3<-rbind(output3,c(coef(temp3,standardized = TRUE)[c(1,2)],NA,coef(temp3,standardized = TRUE)[3:17]))
-  output4<-rbind(output4,coef(temp4,standardized = TRUE))}
-output1<-output1[-1,]
-output2<-output2[-1,]
-output3<-output3[-1,]
-output4<-output4[-1,]
-
-plotdata<-rbind(cbind(coef(modellow1,standardized=TRUE),colQuantiles(output1,probs = c(.025,.975)),1)[-1,],
-                cbind(c(coef(modellow2,standardized=TRUE)[c(1,2)],NA,coef(modellow2,standardized=TRUE)[3:17]),colQuantiles(output2,probs = c(.025,.975)),4)[-1,],
-                cbind(c(coef(modellow3,standardized=TRUE)[c(1,2)],NA,coef(modellow3,standardized=TRUE)[3:17]),colQuantiles(output3,probs = c(.025,.975)),3)[-1,],
-                cbind(coef(modellow4,standardized=TRUE),colQuantiles(output4,probs = c(.025,.975)),2)[-1,])
-plotdata<-as.data.frame(cbind(plotdata,as.factor(1:17)))
-
-colnames(plotdata)<-c('means','low','hi','Treatment','ref')
-plotdata$Treatment<-as.factor(plotdata$Treatment)
-plotdata$ref<-as.factor(plotdata$ref)
-
-fullmanplot<-rbind(fullmanplot,cbind(plotdata,'Subset'='Three Errors'))
-
-
-fullmanplot$Subset<-as.factor(fullmanplot$Subset)
-
-ggplot(fullmanplot, aes(x = ref,y=means,ymin=low,ymax=hi,shape = Treatment,color=Treatment))+
-  facet_wrap(~Subset,nrow = 3)+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  geom_errorbar(position = 'dodge2',size = .9,width = 1)+geom_point(position = position_dodge(width = 1),size = 2.2)+
-  scale_x_discrete(labels=c('1'='Treatment','2'='Expert','3'='Gain Frame','4'='Fact Frame',
-                            '5'='Female','6'='Education','7'='Party ID','8'="Don't Know PID"
-                            ,'9'='Ideology','10'='Age','11'='Fox Viewer','12'='NBC Viewer',
-                            '13'='CNN Viewer','14'='ABC Viewer','15'='Facebook News',
-                            '16'='Twitter News','17'='Instagram News'))+
-  labs(y = NULL,x = NULL)+
-  scale_y_continuous(breaks=c(-.2,0,.2),limits = c(-.27,.27))+
-  theme_test()+geom_hline(yintercept=c(0), linetype="dotted")+
-  scale_color_manual(values = c("#0072B2", "#D55E00","#52854C","#C4961A"),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  scale_shape_manual(values = c(15,17,16,8),labels = c('Self-Quarantine','Release Detainees','NCAA Football','In-Person Ballots'))+
-  theme(axis.text.x = element_text(face = 'bold',size = 13.5),
-        plot.caption = element_text(face = "italic",size = 13.5),
-        axis.text.y = element_text(size = 13.5),
-        plot.title = element_text(hjust = .5),
-        strip.text.x = element_text(size = 13, face = NULL),
-        strip.background = element_rect(colour="white", fill="white"),
-        legend.title = element_text(color = "white"))+
-  coord_flip()+
-  geom_vline(xintercept = c(1.5,2.5,3.5,4.5,5.5,6.5,7.5,8.5,9.5,10.5,11.5,12.5,13.5,14.5,15.5,16.5),linetype = 'dotted')+
-  geom_hline(yintercept = 0,linetype = 'dashed')
-ggsave('olsmanipulation.jpeg',width = 7,height = 11)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#Distribution of Manipulation Checks
-table(data$mcscore,data$group)
-summary(aov(data$mcscore~data$group))
-
-data5<- data[which(is.na(data$pid_scale)),]
-model5a <- lm(treatment4 ~ control, data5)
-summary(model5a)
-model5b <- lm(treatment1 ~ expertise + gain+fact, data5)
-summary(model5b)
-model5c <- lm(treatment4 ~ expertise + gain + fact, data5)
-summary(model5c)
-model5d <- lm(treatment4 ~ expertise + gain + fact +ideology, data5)
-summary(model5d)
-model5e <- lm(treatment4 ~ expertise + gain + fact + pid_scale + expertise*pid_scale, data5)
-summary(model5e)
-model5f <- lm(treatment4 ~ expertise + gain + fact + pid_scale + birth_year, data5)
-summary(model5f)
-model5g <- lm(treatment4 ~ expertise + gain + fact + pid_scale + birth_year + fox, data5)
-summary(model5g)
-
-
-
-
-#Function to do T-tests between Groups
-t1perm <- function(data,g1,g2){
-  t <- t.test(data$treatment1[which(data$group %in% g1)], data$treatment1[which(data$group %in% g2)])
-  delta <- list()
-  delta[[1]] <- paste(g1,collapse=",")
-  delta[[2]] <- paste(g2,collapse=",")
-  delta[[3]] <- length(data$treatment2[which(data$group %in% g1)])
-  delta[[4]] <- length(data$treatment1[which(data$group %in% g2)])
-  delta[[5]] <- t$estimate[1]
-  delta[[6]] <- t$estimate[2]
-  delta[[7]] <- t$p.value
-  return(delta)
-}
-dft1 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
-dft1[1,]<- rbind(unlist(t1perm(data,c(1:8),9)))
-dft1[2,]<- rbind(unlist(t1perm(data,c(1,2,3,4),9)))
-dft1[3,]<- rbind(unlist(t1perm(data,c(5,6,7,8),9)))
-dft1[4,]<- rbind(unlist(t1perm(data,c(1,2,5,6),9)))
-dft1[5,]<- rbind(unlist(t1perm(data,c(3,4,7,8),9)))
-dft1[6,]<- rbind(unlist(t1perm(data,c(1,3,5,7),9)))
-dft1[7,]<- rbind(unlist(t1perm(data,c(2,4,6,8),9)))
-dft1[8,]<- rbind(unlist(t1perm(data,c(5,6),9)))
-dft1[9,]<- rbind(unlist(t1perm(data,c(3,4),9)))
-dft1[10,]<- rbind(unlist(t1perm(data,c(7,8),9)))
-dft1[11,]<- rbind(unlist(t1perm(data,c(1,3),9)))
-dft1[12,]<- rbind(unlist(t1perm(data,c(2,4),9)))
-dft1[13,]<- rbind(unlist(t1perm(data,c(5,7),9)))
-dft1[14,]<- rbind(unlist(t1perm(data,c(6,8),9)))
-dft1[15,]<- rbind(unlist(t1perm(data,c(1,2,3,4),c(5,6,7,8))))
-dft1[16,]<- rbind(unlist(t1perm(data,c(1,2,5,6),c(3,4,7,8))))
-dft1[17,]<- rbind(unlist(t1perm(data,c(1,3,5,7),c(2,4,6,8))))
-dft1[18,]<- rbind(unlist(t1perm(data,c(1,2),c(5,6))))
-dft1[19,]<- rbind(unlist(t1perm(data,c(3,4),c(7,8))))
-dft1[20,]<- rbind(unlist(t1perm(data,c(1,3),c(2,4))))
-dft1[21,]<- rbind(unlist(t1perm(data,c(5,7),c(6,8))))
-
-p<-22
-#Single Group Comparisons
-for(i in 1:9){
-  for(j in 1:9){
-    dft1[p,] <- t1perm(data,i,j)
-    p <- p+1
-  }
-}
-
-
-#Function to do T-tests between Groups
-t2perm <- function(data,g1,g2){
-  t <- t.test(data$treatment2[which(data$group %in% g1)], data$treatment2[which(data$group %in% g2)])
-  delta <- list()
-  delta[[1]] <- paste(g1,collapse=",")
-  delta[[2]] <- paste(g2,collapse=",")
-  delta[[3]] <- length(data$treatment2[which(data$group %in% g1)])
-  delta[[4]] <- length(data$treatment2[which(data$group %in% g2)])
-  delta[[5]] <- t$estimate[1]
-  delta[[6]] <- t$estimate[2]
-  delta[[7]] <- t$p.value
-  return(delta)
-}
-dft2 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
-dft2[1,]<- rbind(unlist(t2perm(data,c(1:8),9)))
-dft2[2,]<- rbind(unlist(t2perm(data,c(1,2,3,4),9)))
-dft2[3,]<- rbind(unlist(t2perm(data,c(5,6,7,8),9)))
-dft2[4,]<- rbind(unlist(t2perm(data,c(1,2,5,6),9)))
-dft2[5,]<- rbind(unlist(t2perm(data,c(3,4,7,8),9)))
-dft2[6,]<- rbind(unlist(t2perm(data,c(1,3,5,7),9)))
-dft2[7,]<- rbind(unlist(t2perm(data,c(2,4,6,8),9)))
-dft2[8,]<- rbind(unlist(t2perm(data,c(5,6),9)))
-dft2[9,]<- rbind(unlist(t2perm(data,c(3,4),9)))
-dft2[10,]<- rbind(unlist(t2perm(data,c(7,8),9)))
-dft2[11,]<- rbind(unlist(t2perm(data,c(1,3),9)))
-dft2[12,]<- rbind(unlist(t2perm(data,c(2,4),9)))
-dft2[13,]<- rbind(unlist(t2perm(data,c(5,7),9)))
-dft2[14,]<- rbind(unlist(t2perm(data,c(6,8),9)))
-dft2[15,]<- rbind(unlist(t2perm(data,c(1,2,3,4),c(5,6,7,8))))
-dft2[16,]<- rbind(unlist(t2perm(data,c(1,2,5,6),c(3,4,7,8))))
-dft2[17,]<- rbind(unlist(t2perm(data,c(1,3,5,7),c(2,4,6,8))))
-dft2[18,]<- rbind(unlist(t2perm(data,c(1,2),c(5,6))))
-dft2[19,]<- rbind(unlist(t2perm(data,c(3,4),c(7,8))))
-dft2[20,]<- rbind(unlist(t2perm(data,c(1,3),c(2,4))))
-dft2[21,]<- rbind(unlist(t2perm(data,c(5,7),c(6,8))))
-
-p<-22
-#Single Group Comparisons
-for(i in 1:9){
-  for(j in 1:9){
-    dft2[p,] <- t2perm(data,i,j)
-    p <- p+1
-  }
-}
-
-#Function to do T-tests between Groups
-t3perm <- function(data,g1,g2){
-  t <- t.test(data$treatment3[which(data$group %in% g1)], data$treatment3[which(data$group %in% g2)])
-  delta <- list()
-  delta[[1]] <- paste(g1,collapse=",")
-  delta[[2]] <- paste(g2,collapse=",")
-  delta[[3]] <- length(data$treatment3[which(data$group %in% g1)])
-  delta[[4]] <- length(data$treatment3[which(data$group %in% g2)])
-  delta[[5]] <- t$estimate[1]
-  delta[[6]] <- t$estimate[2]
-  delta[[7]] <- t$p.value
-  return(delta)
-}
-dft3 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
-dft3[1,]<- rbind(unlist(t3perm(data,c(1:8),9)))
-dft3[2,]<- rbind(unlist(t3perm(data,c(1,2,3,4),9)))
-dft3[3,]<- rbind(unlist(t3perm(data,c(5,6,7,8),9)))
-dft3[4,]<- rbind(unlist(t3perm(data,c(1,2,5,6),9)))
-dft3[5,]<- rbind(unlist(t3perm(data,c(3,4,7,8),9)))
-dft3[6,]<- rbind(unlist(t3perm(data,c(1,3,5,7),9)))
-dft3[7,]<- rbind(unlist(t3perm(data,c(2,4,6,8),9)))
-dft3[8,]<- rbind(unlist(t3perm(data,c(5,6),9)))
-dft3[9,]<- rbind(unlist(t3perm(data,c(3,4),9)))
-dft3[10,]<- rbind(unlist(t3perm(data,c(7,8),9)))
-dft3[11,]<- rbind(unlist(t3perm(data,c(1,3),9)))
-dft3[12,]<- rbind(unlist(t3perm(data,c(2,4),9)))
-dft3[13,]<- rbind(unlist(t3perm(data,c(5,7),9)))
-dft3[14,]<- rbind(unlist(t3perm(data,c(6,8),9)))
-dft3[15,]<- rbind(unlist(t3perm(data,c(1,2,3,4),c(5,6,7,8))))
-dft3[16,]<- rbind(unlist(t3perm(data,c(1,2,5,6),c(3,4,7,8))))
-dft3[17,]<- rbind(unlist(t3perm(data,c(1,3,5,7),c(2,4,6,8))))
-dft3[18,]<- rbind(unlist(t3perm(data,c(1,2),c(5,6))))
-dft3[19,]<- rbind(unlist(t3perm(data,c(3,4),c(7,8))))
-dft3[20,]<- rbind(unlist(t3perm(data,c(1,3),c(2,4))))
-dft3[21,]<- rbind(unlist(t3perm(data,c(5,7),c(6,8))))
-
-p<-22
-#Single Group Comparisons
-for(i in 1:9){
-  for(j in 1:9){
-    dft3[p,] <- t3perm(data,i,j)
-    p <- p+1
-  }
-}
-
-#Function to do T-tests between Groups
-t4perm <- function(data,g1,g2){
-  t <- t.test(data$treatment4[which(data$group %in% g1)], data$treatment4[which(data$group %in% g2)])
-  delta <- list()
-  delta[[1]] <- paste(g1,collapse=",")
-  delta[[2]] <- paste(g2,collapse=",")
-  delta[[3]] <- length(data$treatment4[which(data$group %in% g1)])
-  delta[[4]] <- length(data$treatment4[which(data$group %in% g2)])
-  delta[[5]] <- t$estimate[1]
-  delta[[6]] <- t$estimate[2]
-  delta[[7]] <- t$p.value
-  return(delta)
-}
-dft4 <- data.frame(group1 = 1, group2 = 1, n_group1 = 1, n_group2 =1, mean_g1 =1, mean_g2 =1, p = 1)
-dft4[1,]<- rbind(unlist(t4perm(data,c(1:8),9)))
-dft4[2,]<- rbind(unlist(t4perm(data,c(1,2,3,4),9)))
-dft4[3,]<- rbind(unlist(t4perm(data,c(5,6,7,8),9)))
-dft4[4,]<- rbind(unlist(t4perm(data,c(1,2,5,6),9)))
-dft4[5,]<- rbind(unlist(t4perm(data,c(3,4,7,8),9)))
-dft4[6,]<- rbind(unlist(t4perm(data,c(1,3,5,7),9)))
-dft4[7,]<- rbind(unlist(t4perm(data,c(2,4,6,8),9)))
-dft4[8,]<- rbind(unlist(t4perm(data,c(5,6),9)))
-dft4[9,]<- rbind(unlist(t4perm(data,c(3,4),9)))
-dft4[10,]<- rbind(unlist(t4perm(data,c(7,8),9)))
-dft4[11,]<- rbind(unlist(t4perm(data,c(1,3),9)))
-dft4[12,]<- rbind(unlist(t4perm(data,c(2,4),9)))
-dft4[13,]<- rbind(unlist(t4perm(data,c(5,7),9)))
-dft4[14,]<- rbind(unlist(t4perm(data,c(6,8),9)))
-dft4[15,]<- rbind(unlist(t4perm(data,c(1,2,3,4),c(5,6,7,8))))
-dft4[16,]<- rbind(unlist(t4perm(data,c(1,2,5,6),c(3,4,7,8))))
-dft4[17,]<- rbind(unlist(t4perm(data,c(1,3,5,7),c(2,4,6,8))))
-dft4[18,]<- rbind(unlist(t4perm(data,c(1,2),c(5,6))))
-dft4[19,]<- rbind(unlist(t4perm(data,c(3,4),c(7,8))))
-dft4[20,]<- rbind(unlist(t4perm(data,c(1,3),c(2,4))))
-dft4[21,]<- rbind(unlist(t4perm(data,c(5,7),c(6,8))))
-
-p<-22
-#Single Group Comparisons
-for(i in 1:9){
-  for(j in 1:9){
-    dft4[p,] <- t4perm(data,i,j)
-    p <- p+1
-  }
-}
-``
-
-dft<- rbind(dft1,dft2,dft3,dft4)
-write.csv(dft,"ttests.csv")
-
